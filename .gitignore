@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Data & Output (keep folder structure)
+data/*
+!data/.gitkeep
+output/
+logs/
+*.log
+
+# Models (too large for GitHub)
+models/
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+
+# Environment variables
+.env
+.env.local
+
+# Backup files
+*backup*
+*_temp_*
