@@ -845,53 +845,78 @@ def create_tooltip(text, tooltip_text):
 
 
 # ==================== 顶部控制栏 ====================
+def _sync_header_params():
+    """从 URL query params 同步语言和帮助状态到 session_state"""
+    qp = st.query_params
+    if 'lang' in qp:
+        val = qp['lang']
+        if val in ('zh', 'en') and val != st.session_state.get('lang', 'zh'):
+            st.session_state.lang = val
+            st.query_params.clear()
+            st.rerun()
+    if 'toggle_help' in qp:
+        st.session_state.show_help_dialog = not st.session_state.get('show_help_dialog', False)
+        st.query_params.clear()
+        st.rerun()
+
+
 def create_top_right_controls():
-    """创建页面最顶端控制栏：语言切换按钮(点击切换) + 使用说明"""
+    """在 Streamlit header 栏 Deploy 按钮左侧注入：语言切换 + 使用说明"""
+    _sync_header_params()
+
     lang = st.session_state.get('lang', 'zh')
     page = st.session_state.get('page', '')
     page_key = get_page_key(page, lang) if page else 'nav_home'
-    
-    # 自定义CSS让顶栏紧凑且右对齐
-    st.markdown("""
+
+    # 计算切换目标
+    target_lang = 'en' if lang == 'zh' else 'zh'
+    lang_btn_text = '🇺🇸 English' if lang == 'zh' else '🇨🇳 中文'
+    help_btn_text = '📖 使用说明' if lang == 'zh' else '📖 User Guide'
+
+    # 注入到 Streamlit header（iframe → parent document）
+    st.components.v1.html(f"""
     <style>
-    /* 顶部控制栏容器 - 右对齐, 紧凑 */
-    div[data-testid="stHorizontalBlock"].top-bar > div {
-        flex: none !important;
-    }
-    div[data-testid="stVerticalBlock"].top-bar > div:first-child {
-        flex: 1 !important;
-    }
+    #hc-wrap {{ position:absolute; top:50%; right:105px; transform:translateY(-50%);
+               display:flex; align-items:center; gap:6px; z-index:999; }}
+    #hc-wrap button {{
+        background:rgba(255,255,255,0.92); border:1px solid rgba(79,70,229,0.18);
+        border-radius:8px; padding:5px 13px; font-size:12.5px; font-weight:600;
+        color:#4F46E5; cursor:pointer; transition:all .2s;
+        font-family:'Plus Jakarta Sans','Segoe UI','PingFang SC',sans-serif;
+        white-space:nowrap; line-height:1.4;
+    }}
+    #hc-wrap button:hover {{
+        background:rgba(79,70,229,0.07); border-color:#4F46E5;
+        transform:translateY(-1px); box-shadow:0 3px 10px rgba(79,70,229,0.18);
+    }}
+    #hc-wrap .hb {{
+        background:linear-gradient(135deg,#4F46E5,#7C3AED); color:#fff; border:none;
+        box-shadow:0 2px 8px rgba(79,70,229,0.25);
+    }}
+    #hc-wrap .hb:hover {{
+        box-shadow:0 4px 14px rgba(79,70,229,0.4); transform:translateY(-1px);
+    }}
     </style>
-    """, unsafe_allow_html=True)
-    
-    # 使用 HTML 渲染一个紧凑的右对齐顶栏
-    lang_label = '🇨🇳 中文' if lang == 'zh' else '🇺🇸 English'
-    help_label = '📖 使用说明' if lang == 'zh' else '📖 User Guide'
-    help_active = 'background: linear-gradient(135deg, #4F46E5, #7C3AED); color: white; border-color: #4F46E5;' if st.session_state.get('show_help_dialog') else ''
-    
-    # 两个按钮横排放置在右侧
-    col_empty, col_lang, col_help = st.columns([7, 1.5, 1.5], gap="small")
-    
-    with col_lang:
-        # 语言切换 - 点击按钮直接切换
-        if lang == 'zh':
-            # 当前中文，点击切换到英文
-            if st.button('🇺🇸 English', key='lang_toggle_top', use_container_width=True):
-                st.session_state.lang = 'en'
-                st.rerun()
-        else:
-            # 当前英文，点击切换到中文
-            if st.button('🇨🇳 中文', key='lang_toggle_top', use_container_width=True):
-                st.session_state.lang = 'zh'
-                st.rerun()
-    
-    with col_help:
-        # 使用说明按钮
-        if st.button(help_label, key='help_btn_top', use_container_width=True):
-            st.session_state.show_help_dialog = not st.session_state.get('show_help_dialog', False)
-            st.rerun()
-    
-    # 显示使用说明 - 使用 expander 替代 dialog
+    <div id="hc-wrap">
+      <button onclick="window.parent.location.search='?lang={target_lang}'">{lang_btn_text}</button>
+      <button class="hb" onclick="window.parent.location.search='?toggle_help=1'">{help_btn_text}</button>
+    </div>
+    <script>
+    (function() {{
+        var hc = document.getElementById('hc-wrap');
+        function tryInject() {{
+            var hdr = window.parent.document.querySelector('header[data-testid="stHeader"]');
+            if (!hdr) {{ setTimeout(tryInject, 150); return; }}
+            if (hdr.querySelector('#hc-wrap')) return;
+            var c = hc.cloneNode(true);
+            hdr.appendChild(c);
+        }}
+        tryInject();
+    }})();
+    </script>
+    """, height=0)
+
+    # 显示使用说明 expander
     if st.session_state.get('show_help_dialog', False):
         with st.expander('📖 ' + ('使用说明' if lang == 'zh' else 'User Guide'), expanded=True):
             col_close, _ = st.columns([1, 8])
@@ -899,8 +924,7 @@ def create_top_right_controls():
                 if st.button('✖', key='close_help_expander'):
                     st.session_state.show_help_dialog = False
                     st.rerun()
-            
-            # 根据当前页面显示对应说明
+
             help_key_map = {
                 'nav_home': 'help_overview',
                 'nav_scoring': 'help_m_scoring',
@@ -912,21 +936,13 @@ def create_top_right_controls():
                 'nav_settings': 'help_tips',
                 'nav_help': 'help_faq'
             }
-            
+
             help_key = help_key_map.get(page_key, 'help_overview')
-            
-            # 显示当前模块说明
             st.markdown(t(help_key, lang))
-            
             st.markdown('---')
-            
-            # 显示工作流程
             st.markdown(f"**{t('help_workflow_title', lang)}**")
             st.markdown(t('help_workflow', lang))
-            
             st.markdown('---')
-            
-            # 显示常见问题
             st.markdown(f"**{t('help_faq_title', lang)}**")
             st.markdown(t('help_faq', lang))
 
