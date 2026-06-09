@@ -875,50 +875,58 @@ def create_top_right_controls():
 
     # 注入到 Streamlit header（iframe → parent document）
     st.components.v1.html(f"""
-    <style>
-    #hc-wrap {{
-        display:flex; align-items:center; gap:8px; z-index:999;
-    }}
-    #hc-wrap button {{
-        display:inline-flex; align-items:center; justify-content:center;
-        font-weight:400; padding:0.25rem 0.75rem; border-radius:0.5rem;
-        min-height:2.3rem; border:1px solid rgba(49,51,63,0.2);
-        background-color:rgb(255,255,255); color:rgb(49,51,63);
-        font-size:14px; line-height:1.6;
-        transition:all 0.1s ease-in-out 0s; cursor:pointer;
-        font-family:'Source Sans Pro', sans-serif;
-    }}
-    #hc-wrap button:hover {{
-        border-color:rgb(255,75,75); color:rgb(255,75,75);
-    }}
-    #hc-wrap .hb {{
-        background:linear-gradient(135deg,#ff4b4b,#ff6b6b);
-        color:#fff; border:none;
-        box-shadow:0 1px 2px rgba(0,0,0,0.1);
-    }}
-    #hc-wrap .hb:hover {{
-        background:linear-gradient(135deg,#ff6b6b,#ff8585);
-        box-shadow:0 2px 6px rgba(255,75,75,0.4);
-    }}
-    #hc-wrap .hb:active {{ opacity:0.9; }}
-    </style>
-    <div id="hc-wrap">
-      <button onclick="window.parent.location.search='?lang={target_lang}'">{lang_btn_text}</button>
-      <button class="hb" onclick="window.parent.location.search='?toggle_help=1'">{help_btn_text}</button>
-    </div>
     <script>
     (function() {{
-        var hc = document.getElementById('hc-wrap');
         function tryInject() {{
             var hdr = window.parent.document.querySelector('header[data-testid="stHeader"]');
             if (!hdr) {{ setTimeout(tryInject, 150); return; }}
             if (hdr.querySelector('#hc-wrap')) return;
-            var c = hc.cloneNode(true);
+
+            // Inject CSS into parent document
+            if (!window.parent.document.querySelector('#hc-style')) {{
+                var style = window.parent.document.createElement('style');
+                style.id = 'hc-style';
+                style.textContent = `
+                    #hc-wrap {{ display:flex; align-items:center; gap:8px; margin-right:8px; }}
+                    #hc-wrap button {{
+                        display:inline-flex; align-items:center; justify-content:center;
+                        font-weight:400; padding:0 8px; border-radius:8px;
+                        min-height:28px; border:none;
+                        background:transparent; color:rgb(49,51,63);
+                        font-size:14px; line-height:28px;
+                        cursor:pointer; white-space:nowrap;
+                        font-family:'Plus Jakarta Sans','Segoe UI','PingFang SC',sans-serif;
+                    }}
+                    #hc-wrap button:hover {{
+                        background:rgba(49,51,63,0.04);
+                    }}
+                `;
+                window.parent.document.head.appendChild(style);
+            }}
+
+            // Create container
+            var wrap = window.parent.document.createElement('div');
+            wrap.id = 'hc-wrap';
+
+            // Language button
+            var langBtn = window.parent.document.createElement('button');
+            langBtn.textContent = '{lang_btn_text}';
+            langBtn.onclick = function() {{ window.parent.location.search = '?lang={target_lang}'; }};
+
+            // Help button
+            var helpBtn = window.parent.document.createElement('button');
+            helpBtn.textContent = '{help_btn_text}';
+            helpBtn.onclick = function() {{ window.parent.location.search = '?toggle_help=1'; }};
+
+            wrap.appendChild(langBtn);
+            wrap.appendChild(helpBtn);
+
+            // Insert before Deploy button
             var deployBtn = hdr.querySelector('[data-testid="stDeployButton"]');
             if (deployBtn && deployBtn.parentNode) {{
-                deployBtn.parentNode.insertBefore(c, deployBtn);
+                deployBtn.parentNode.insertBefore(wrap, deployBtn);
             }} else {{
-                hdr.insertBefore(c, hdr.lastElementChild);
+                hdr.insertBefore(wrap, hdr.lastElementChild);
             }}
         }}
         tryInject();
