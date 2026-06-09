@@ -11,6 +11,12 @@ import numpy as np
 from pathlib import Path
 import time
 import json
+import sys
+import os
+
+# 将 src 目录加入 path 以便导入 i18n
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from i18n import t, get_page_names, get_page_key
 
 # ==================== 页面配置 ====================
 st.set_page_config(
@@ -681,6 +687,40 @@ st.markdown("""
             padding: 20px;
         }
     }
+    
+    /* 右上角控制栏 - 固定在顶部右侧 */
+    .top-right-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0;
+    }
+    
+    /* 语言选择器样式 */
+    [data-testid="stVerticalBlock"] > div:first-child > div > div > [data-testid="stSelectbox"] > div {
+        min-width: 130px;
+    }
+    
+    /* 顶部控制行紧凑化 */
+    [data-testid="column"] > div > div > [data-testid="stSelectbox"] label,
+    [data-testid="column"] > div > div > [data-testid="stButton"] button {
+        border-radius: 10px;
+        font-size: 0.85rem;
+    }
+    
+    [data-testid="column"] > div > div > [data-testid="stButton"] button {
+        background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+        color: white;
+        border: none;
+        font-weight: 600;
+        box-shadow: 0 2px 10px rgba(79, 70, 229, 0.25);
+        transition: all 0.2s;
+    }
+    
+    [data-testid="column"] > div > div > [data-testid="stButton"] button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(79, 70, 229, 0.35);
+    }
 </style>
 
 <!-- 背景装饰 -->
@@ -690,9 +730,9 @@ st.markdown("""
 
 # ==================== 配置类 ====================
 class Config:
-    BASE_DIR = Path("D:/PI_Project")
+    BASE_DIR = Path("D:/PI_ASS")
     DATA_DIR = BASE_DIR / "data"
-    PAPER_DIR = BASE_DIR / "paper"
+    PAPER_DIR = BASE_DIR / "data" / "paper"
     MODEL_DIR = BASE_DIR / "models"
     OUTPUT_DIR = BASE_DIR / "output"
     TEMP_DIR = BASE_DIR / "temp"
@@ -776,8 +816,12 @@ def init_session_state():
         st.session_state.hts_results = None
     if 'scoring_pause' not in st.session_state:
         st.session_state.scoring_pause = False
+    if 'lang' not in st.session_state:
+        st.session_state.lang = 'zh'
     if 'page' not in st.session_state:
-        st.session_state.page = "🏠 首页"
+        st.session_state.page = get_page_names('zh')[0]
+    if 'show_help_dialog' not in st.session_state:
+        st.session_state.show_help_dialog = False
 
 
 def check_rdkit():
@@ -800,12 +844,116 @@ def create_tooltip(text, tooltip_text):
     '''
 
 
+# ==================== 顶部控制栏 ====================
+def create_top_right_controls():
+    """创建右上角控制栏：语言切换 + 使用说明"""
+    lang = st.session_state.get('lang', 'zh')
+    page = st.session_state.get('page', '')
+    page_key = get_page_key(page, lang) if page else 'nav_home'
+    
+    # 使用列布局将控制按钮推到右侧 - 紧贴顶部
+    col_spacer, col_lang, col_help = st.columns([5, 2, 2])
+    
+    with col_lang:
+        lang_options = ['🇨🇳 中文', '🇺🇸 English']
+        selected_lang = st.selectbox(
+            'Language',
+            lang_options,
+            index=0 if lang == 'zh' else 1,
+            key='lang_selector_top',
+            label_visibility='collapsed'
+        )
+        
+        new_lang = 'zh' if '中文' in selected_lang else 'en'
+        if new_lang != lang:
+            st.session_state.lang = new_lang
+            st.rerun()
+    
+    with col_help:
+        help_label = '📖 使用说明' if lang == 'zh' else '📖 User Guide'
+        if st.button(help_label, 
+                     key='help_btn_top', 
+                     use_container_width=True):
+            st.session_state.show_help_dialog = not st.session_state.show_help_dialog
+            st.rerun()
+    
+    # 显示使用说明 - 使用 expander 替代 dialog
+    if st.session_state.get('show_help_dialog', False):
+        with st.expander('📖 ' + ('使用说明' if lang == 'zh' else 'User Guide'), expanded=True):
+            col_close, _ = st.columns([1, 8])
+            with col_close:
+                if st.button('✖', key='close_help_expander'):
+                    st.session_state.show_help_dialog = False
+                    st.rerun()
+            
+            # 根据当前页面显示对应说明
+            help_key_map = {
+                'nav_home': 'help_overview',
+                'nav_scoring': 'help_m_scoring',
+                'nav_download': 'help_m_download',
+                'nav_extraction': 'help_m_extraction',
+                'nav_descriptors': 'help_m_descriptors',
+                'nav_training': 'help_m_training',
+                'nav_hts': 'help_m_hts',
+                'nav_settings': 'help_tips',
+                'nav_help': 'help_faq'
+            }
+            
+            help_key = help_key_map.get(page_key, 'help_overview')
+            
+            # 显示当前模块说明
+            st.markdown(t(help_key, lang))
+            
+            st.markdown('---')
+            
+            # 显示工作流程
+            st.markdown(f"**{t('help_workflow_title', lang)}**")
+            st.markdown(t('help_workflow', lang))
+            
+            st.markdown('---')
+            
+            # 显示常见问题
+            st.markdown(f"**{t('help_faq_title', lang)}**")
+            st.markdown(t('help_faq', lang))
+
+
+@st.dialog('📖 User Guide / 使用说明', width='large')
+def show_help_dialog(page_key: str, lang: str):
+    """显示当前模块的使用说明"""
+    
+    # 关闭按钮
+    if st.button('✖ ' + ('关闭' if lang == 'zh' else 'Close'), key='close_help'):
+        st.session_state.show_help_dialog = False
+        st.rerun()
+    
+    st.markdown('---')
+    
+    # 根据当前页面显示对应说明
+    help_key_map = {
+        'nav_home': 'help_overview',
+        'nav_scoring': 'help_m_scoring',
+        'nav_download': 'help_m_download',
+        'nav_extraction': 'help_m_extraction',
+        'nav_descriptors': 'help_m_descriptors',
+        'nav_training': 'help_m_training',
+        'nav_hts': 'help_m_hts',
+        'nav_settings': 'help_tips',
+        'nav_help': 'help_faq'
+    }
+    
+    help_key = help_key_map.get(page_key, 'help_overview')
+    help_content = t(help_key, lang)
+    
+    st.markdown(help_content)
+
+
 # ==================== 侧边栏 ====================
 def create_sidebar():
-    """创建侧边栏导航 - 高端玻璃拟态风格"""
+    """创建侧边栏导航 - 高端玻璃拟态风格 + i18n"""
+    lang = st.session_state.get('lang', 'zh')
     
     # Logo区域
-    st.sidebar.markdown("""
+    st.sidebar.markdown(f"""
     <div style="padding: 20px 0; text-align: center;">
         <div style="
             background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
@@ -829,7 +977,7 @@ def create_sidebar():
             PI-SCREEN
         </h2>
         <p style="color: #64748B; font-size: 0.8rem; margin-top: 4px;">
-            聚酰亚胺性能预测系统
+            {t('app_subtitle', lang)}
         </p>
     </div>
     <hr style="border: none; height: 1px; background: linear-gradient(90deg, transparent, #E2E8F0, transparent); margin: 16px 0;">
@@ -837,7 +985,7 @@ def create_sidebar():
     
     # RDKit状态指示器
     if check_rdkit():
-        st.sidebar.markdown("""
+        st.sidebar.markdown(f"""
         <div style="
             background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
             border: 1px solid #6EE7B7;
@@ -850,13 +998,13 @@ def create_sidebar():
         ">
             <span style="font-size: 1.2rem;">✅</span>
             <div>
-                <div style="font-weight: 600; color: #064E3B; font-size: 0.85rem;">RDKit 已就绪</div>
-                <div style="color: #059669; font-size: 0.75rem;">分子计算引擎运行中</div>
+                <div style="font-weight: 600; color: #064E3B; font-size: 0.85rem;">{t('rdkit_ready', lang)}</div>
+                <div style="color: #059669; font-size: 0.75rem;">{t('rdkit_running', lang)}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.sidebar.markdown("""
+        st.sidebar.markdown(f"""
         <div style="
             background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
             border: 1px solid #FCD34D;
@@ -869,37 +1017,28 @@ def create_sidebar():
         ">
             <span style="font-size: 1.2rem;">⚠️</span>
             <div>
-                <div style="font-weight: 600; color: #92400E; font-size: 0.85rem;">RDKit 未安装</div>
-                <div style="color: #B45309; font-size: 0.75rem;">运行: pip install rdkit</div>
+                <div style="font-weight: 600; color: #92400E; font-size: 0.85rem;">{t('rdkit_not_installed', lang)}</div>
+                <div style="color: #B45309; font-size: 0.75rem;">{t('rdkit_install_hint', lang)}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
     
-    # 导航选项
-    pages = [
-        "🏠 首页",
-        "📚 文献评分",
-        "📥 文献下载",
-        "🔬 数据提取",
-        "🧪 描述符计算",
-        "🤖 模型训练",
-        "🔍 高通量筛选",
-        "⚙️ 系统设置"
-    ]
+    # 导航选项 (使用 i18n)
+    pages = get_page_names(lang)
     
     page = st.sidebar.radio(
-        "📋 功能模块",
+        t('sidebar_title', lang),
         pages,
         key="nav_radio",
         label_visibility="collapsed"
     )
     
-    st.sidebar.markdown("""
+    st.sidebar.markdown(f"""
     <hr style="border: none; height: 1px; background: linear-gradient(90deg, transparent, #E2E8F0, transparent); margin: 24px 0;">
     
     <div style="padding: 0 8px;">
         <h4 style="color: #0F172A; font-size: 0.85rem; font-weight: 700; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
-            💡 快速链接
+            {t('quick_links', lang)}
         </h4>
     </div>
     """, unsafe_allow_html=True)
@@ -907,23 +1046,28 @@ def create_sidebar():
     # 快速链接按钮
     col1, col2 = st.sidebar.columns(2)
     
+    project_label = t('btn_project', lang)
+    data_label = t('btn_data', lang)
+    model_label = t('btn_model', lang)
+    output_label = t('btn_output', lang)
+    
     with col1:
-        if st.button("📁 项目", use_container_width=True):
-            st.toast(f"项目目录: {Config.BASE_DIR}")
+        if st.button(project_label, use_container_width=True):
+            st.toast(f"Project: {Config.BASE_DIR}")
     
     with col2:
-        if st.button("📊 数据", use_container_width=True):
-            st.toast(f"数据目录: {Config.DATA_DIR}")
+        if st.button(data_label, use_container_width=True):
+            st.toast(f"Data: {Config.DATA_DIR}")
     
     col3, col4 = st.sidebar.columns(2)
     
     with col3:
-        if st.button("🤖 模型", use_container_width=True):
-            st.toast(f"模型目录: {Config.MODEL_DIR}")
+        if st.button(model_label, use_container_width=True):
+            st.toast(f"Models: {Config.MODEL_DIR}")
     
     with col4:
-        if st.button("📤 输出", use_container_width=True):
-            st.toast(f"输出目录: {Config.OUTPUT_DIR}")
+        if st.button(output_label, use_container_width=True):
+            st.toast(f"Output: {Config.OUTPUT_DIR}")
     
     # 底部信息
     st.sidebar.markdown("""
@@ -952,7 +1096,8 @@ def create_sidebar():
 
 # ==================== 首页 ====================
 def create_home_page():
-    """首页 - 高端Corporate Trust设计风格"""
+    """首页 - 高端Corporate Trust设计风格 + i18n"""
+    lang = st.session_state.get('lang', 'zh')
     
     # Hero Section with 3D Card
     st.markdown(
@@ -964,25 +1109,25 @@ def create_home_page():
         '<div style="font-size:3rem;margin:0;line-height:1;font-weight:800;'
         'background:linear-gradient(135deg,#4F46E5 0%,#7C3AED 50%,#6366F1 100%);'
         '-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">PI-SCREEN</div>'
-        '<div style="color:#64748B;font-size:1.1rem;margin:8px 0 0 0;font-weight:500;">聚酰亚胺性能预测与高通量筛选系统</div>'
+        f'<div style="color:#64748B;font-size:1.1rem;margin:8px 0 0 0;font-weight:500;">{t("app_full_name", lang)}</div>'
         '</div></div>'
-        '<div style="margin-bottom:24px;"><span class="badge-glow">✨ AI-Powered Research</span></div>'
+        f'<div style="margin-bottom:24px;"><span class="badge-glow">✨ {t("powered_by_ai", lang)}</span></div>'
         '<div style="background:linear-gradient(135deg,rgba(79,70,229,0.05) 0%,rgba(124,58,237,0.05) 100%);'
         'border-radius:16px;padding:24px;border:1px solid rgba(79,70,229,0.1);">'
-        '<div style="color:#0F172A;font-weight:600;margin-bottom:20px;font-size:1rem;">系统核心能力</div>'
+        f'<div style="color:#0F172A;font-weight:600;margin-bottom:20px;font-size:1rem;">{t("home_core_capabilities", lang)}</div>'
         '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;">'
         '<div style="text-align:center;padding:16px;background:rgba(255,255,255,0.5);border-radius:12px;">'
         '<div style="font-size:2.2rem;font-weight:800;background:linear-gradient(135deg,#4F46E5 0%,#6366F1 100%);'
         '-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">10</div>'
-        '<div style="color:#64748B;font-size:0.85rem;font-weight:500;margin-top:4px;">AI评委并行评分</div></div>'
+        f'<div style="color:#64748B;font-size:0.85rem;font-weight:500;margin-top:4px;">{t("home_parallel_scoring", lang)}</div></div>'
         '<div style="text-align:center;padding:16px;background:rgba(255,255,255,0.5);border-radius:12px;">'
         '<div style="font-size:2.2rem;font-weight:800;background:linear-gradient(135deg,#7C3AED 0%,#A855F7 100%);'
         '-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">80+</div>'
-        '<div style="color:#64748B;font-size:0.85rem;font-weight:500;margin-top:4px;">分子组合预测</div></div>'
+        f'<div style="color:#64748B;font-size:0.85rem;font-weight:500;margin-top:4px;">{t("home_molecule_prediction", lang)}</div></div>'
         '<div style="text-align:center;padding:16px;background:rgba(255,255,255,0.5);border-radius:12px;">'
         '<div style="font-size:2.2rem;font-weight:800;background:linear-gradient(135deg,#6366F1 0%,#8B5CF6 100%);'
         '-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">6</div>'
-        '<div style="color:#64748B;font-size:0.85rem;font-weight:500;margin-top:4px;">核心功能模块</div></div>'
+        f'<div style="color:#64748B;font-size:0.85rem;font-weight:500;margin-top:4px;">{t("home_core_modules", lang)}</div></div>'
         '</div></div></div></div>',
         unsafe_allow_html=True
     )
@@ -990,15 +1135,15 @@ def create_home_page():
     st.markdown("<br>", unsafe_allow_html=True)
     
     # Feature Cards with 3D Effects
-    st.markdown("<h2 style='text-align: center; margin-bottom: 8px;'>核心功能模块</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #64748B; margin-bottom: 32px;'>探索聚酰亚胺材料的无限可能</p>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align: center; margin-bottom: 8px;'>{t('home_feature_title', lang)}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center; color: #64748B; margin-bottom: 32px;'>{t('home_feature_subtitle', lang)}</p>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     
     features = [
-        ("📚", "文献评分", "10评委AI系统智能筛选高相关度文献", "home_scoring", "📚 文献评分", "left"),
-        ("🔬", "数据提取", "从文献PDF中自动提取结构与性能数据", "home_extraction", "🔬 数据提取", "right"),
-        ("🔍", "高通量筛选", "预测80+二酐-二胺组合的性能表现", "home_hts", "🔍 高通量筛选", "left"),
+        ("📚", t('home_scoring_title', lang), t('home_scoring_desc', lang), "home_scoring", t('nav_scoring', lang), "left"),
+        ("🔬", t('home_extraction_title', lang), t('home_extraction_desc', lang), "home_extraction", t('nav_extraction', lang), "right"),
+        ("🔍", t('home_hts_title', lang), t('home_hts_desc', lang), "home_hts", t('nav_hts', lang), "left"),
     ]
     
     for i, (icon, title, desc, key, page_name, side) in enumerate(features):
@@ -1020,23 +1165,23 @@ def create_home_page():
             </div>
             """, unsafe_allow_html=True)
             
-            if st.button(f"进入模块 →", key=key, use_container_width=True):
+            if st.button(t('home_enter_module', lang), key=key, use_container_width=True):
                 st.session_state.nav_radio = page_name
                 st.rerun()
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     # Stats Section with Glow Cards
-    st.markdown("<h2 style='text-align: center; margin-bottom: 8px;'>项目状态概览</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #64748B; margin-bottom: 32px;'>实时数据监控</p>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align: center; margin-bottom: 8px;'>{t('home_project_status', lang)}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center; color: #64748B; margin-bottom: 32px;'>{t('home_realtime_monitor', lang)}</p>", unsafe_allow_html=True)
     
     col1, col2, col3, col4 = st.columns(4)
     
     stats = [
-        (len(list(Config.PAPER_DIR.glob("*.pdf"))), "文献数量", "PDF"),
-        (len(list(Config.DATA_DIR.glob("*.csv"))), "数据文件", "CSV"),
-        (len(list(Config.MODEL_DIR.glob("*.pkl"))), "训练模型", "PKL"),
-        (len(list(Config.OUTPUT_DIR.glob("*"))), "输出结果", "Files"),
+        (len(list(Config.PAPER_DIR.glob("*.pdf"))), t('home_paper_count', lang), "PDF"),
+        (len(list(Config.DATA_DIR.glob("*.csv"))), t('home_data_files', lang), "CSV"),
+        (len(list(Config.MODEL_DIR.glob("*.pkl"))), t('home_trained_models', lang), "PKL"),
+        (len(list(Config.OUTPUT_DIR.glob("*"))), t('home_output_results', lang), "Files"),
     ]
     
     for i, (count, label, type_) in enumerate(stats):
@@ -1052,7 +1197,7 @@ def create_home_page():
     st.markdown("<br><br>", unsafe_allow_html=True)
     
     # Database Preview with Gradient Headers
-    st.markdown("""
+    st.markdown(f"""
     <div style="
         background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
         padding: 20px 28px;
@@ -1060,41 +1205,43 @@ def create_home_page():
         margin-bottom: 28px;
         box-shadow: 0 8px 30px rgba(79, 70, 229, 0.3);
     ">
-        <h2 style="color: white; margin: 0; font-size: 1.4rem; font-weight: 700;">🧪 内置分子数据库</h2>
-        <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0 0; font-size: 0.9rem;">二酐与二胺分子结构库</p>
+        <h2 style="color: white; margin: 0; font-size: 1.4rem; font-weight: 700;">{t('home_molecular_db', lang)}</h2>
+        <p style="color: rgba(255,255,255,0.8); margin: 8px 0 0 0; font-size: 0.9rem;">{t('home_molecular_db_sub', lang)}</p>
     </div>
     """, unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     
+    name_col = t('home_name_col', lang)
+    
     with col1:
-        st.markdown("""
+        st.markdown(f"""
         <div style="background: rgba(255, 255, 255, 0.95); border-radius: 16px; padding: 24px; 
                     border: 1px solid rgba(79, 70, 229, 0.1); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);">
             <h3 style="color: #4F46E5; margin: 0 0 16px 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2rem;">🧪</span> 二酐数据库
+                <span style="font-size: 1.2rem;">🧪</span> {t('home_dianhydride_db', lang)}
             </h3>
         </div>
         """, unsafe_allow_html=True)
         
         da_df = pd.DataFrame([
-            {"名称": k, "SMILES": v[:35] + "..." if len(v) > 35 else v} 
+            {name_col: k, "SMILES": v[:35] + "..." if len(v) > 35 else v} 
             for k, v in Config.DIANHYDRIDES.items()
         ])
         st.dataframe(da_df, hide_index=True, use_container_width=True)
         
     with col2:
-        st.markdown("""
+        st.markdown(f"""
         <div style="background: rgba(255, 255, 255, 0.95); border-radius: 16px; padding: 24px; 
                     border: 1px solid rgba(79, 70, 229, 0.1); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);">
             <h3 style="color: #7C3AED; margin: 0 0 16px 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.2rem;">🧬</span> 二胺数据库
+                <span style="font-size: 1.2rem;">🧬</span> {t('home_diamine_db', lang)}
             </h3>
         </div>
         """, unsafe_allow_html=True)
         
         di_df = pd.DataFrame([
-            {"名称": k, "SMILES": v[:35] + "..." if len(v) > 35 else v} 
+            {name_col: k, "SMILES": v[:35] + "..." if len(v) > 35 else v} 
             for k, v in Config.DIAMINES.items()
         ])
         st.dataframe(di_df, hide_index=True, use_container_width=True)
@@ -1119,9 +1266,9 @@ def create_home_page():
             -webkit-text-fill-color: transparent;
             background-clip: text;
         ">
-            ✨ {total_comb} 种二酐-二胺组合等待预测
+            ✨ {total_comb} {t('home_combinations', lang)}
         </div>
-        <div style="color: #64748B; margin-top: 8px; font-weight: 500;">探索聚酰亚胺材料的无限可能</div>
+        <div style="color: #64748B; margin-top: 8px; font-weight: 500;">{t('home_explore_possibilities', lang)}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -2120,31 +2267,92 @@ def create_settings_page():
             st.success("配置已重置为默认值")
 
 
+# ==================== 使用说明 ====================
+def create_help_page():
+    """使用说明页面 - 中英双语"""
+    lang = st.session_state.get('lang', 'zh')
+    
+    st.title(t('help_title', lang))
+    st.markdown(f"<p style='color: #64748B; margin-bottom: 24px;'>{t('help_subtitle', lang)}</p>", unsafe_allow_html=True)
+    
+    # 系统概述
+    st.markdown(f"## {t('help_overview_title', lang)}")
+    st.markdown(t('help_overview', lang))
+    
+    st.markdown("---")
+    
+    # 工作流程
+    st.markdown(f"## {t('help_workflow_title', lang)}")
+    st.markdown(t('help_workflow', lang))
+    
+    st.markdown("---")
+    
+    # 模块详细说明
+    st.markdown(f"## {t('help_modules_title', lang)}")
+    
+    tabs_keys = [
+        ('help_m_scoring', 'nav_scoring'),
+        ('help_m_download', 'nav_download'),
+        ('help_m_extraction', 'nav_extraction'),
+        ('help_m_descriptors', 'nav_descriptors'),
+        ('help_m_training', 'nav_training'),
+        ('help_m_hts', 'nav_hts'),
+    ]
+    
+    tab_labels = [t(k[1], lang) for k in tabs_keys]
+    tabs = st.tabs(tab_labels)
+    
+    for i, (content_key, _) in enumerate(tabs_keys):
+        with tabs[i]:
+            st.markdown(t(content_key, lang))
+    
+    st.markdown("---")
+    
+    # 使用技巧
+    st.markdown(f"## {t('help_tips_title', lang)}")
+    st.markdown(t('help_tips', lang))
+    
+    st.markdown("---")
+    
+    # FAQ
+    st.markdown(f"## {t('help_faq_title', lang)}")
+    st.markdown(t('help_faq', lang))
+
+
 # ==================== 主函数 ====================
 def main():
     """主函数"""
     init_session_state()
     page = create_sidebar()
+    lang = st.session_state.get('lang', 'zh')
     
     # 同步session_state与侧边栏选择
     st.session_state.page = page
     
-    if page == "🏠 首页":
+    # 添加右上角控制栏（语言切换 + 使用说明）
+    create_top_right_controls()
+    
+    # 使用 i18n key 进行路由
+    page_key = get_page_key(page, lang)
+    
+    if page_key == "nav_home":
         create_home_page()
-    elif page == "📚 文献评分":
+    elif page_key == "nav_scoring":
         create_scoring_page()
-    elif page == "📥 文献下载":
+    elif page_key == "nav_download":
         create_download_page()
-    elif page == "🔬 数据提取":
+    elif page_key == "nav_extraction":
         create_extraction_page()
-    elif page == "🧪 描述符计算":
+    elif page_key == "nav_descriptors":
         create_descriptors_page()
-    elif page == "🤖 模型训练":
+    elif page_key == "nav_training":
         create_training_page()
-    elif page == "🔍 高通量筛选":
+    elif page_key == "nav_hts":
         create_hts_page()
-    elif page == "⚙️ 系统设置":
+    elif page_key == "nav_settings":
         create_settings_page()
+    elif page_key == "nav_help":
+        create_help_page()
 
 
 if __name__ == "__main__":
