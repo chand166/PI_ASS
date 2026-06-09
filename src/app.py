@@ -876,26 +876,42 @@ def create_top_right_controls():
     # 注入到 Streamlit header（iframe → parent document）
     st.components.v1.html(f"""
     <style>
-    #hc-wrap {{ position:absolute; top:50%; right:105px; transform:translateY(-50%);
-               display:flex; align-items:center; gap:6px; z-index:999; }}
+    #hc-wrap {{
+        display:flex; align-items:center; gap:10px; z-index:999;
+        padding:4px 8px; background:rgba(255,255,255,0.08); border-radius:12px;
+        backdrop-filter:blur(8px);
+    }}
     #hc-wrap button {{
-        background:rgba(255,255,255,0.92); border:1px solid rgba(79,70,229,0.18);
-        border-radius:8px; padding:5px 13px; font-size:12.5px; font-weight:600;
-        color:#4F46E5; cursor:pointer; transition:all .2s;
+        background:linear-gradient(135deg,#f8fafc,#e2e8f0);
+        border:1px solid rgba(79,70,229,0.25);
+        border-radius:20px; padding:6px 16px; font-size:13px; font-weight:600;
+        color:#4F46E5; cursor:pointer; transition:all .3s cubic-bezier(.4,0,.2,1);
         font-family:'Plus Jakarta Sans','Segoe UI','PingFang SC',sans-serif;
-        white-space:nowrap; line-height:1.4;
+        white-space:nowrap; line-height:1.4; position:relative; overflow:hidden;
+        box-shadow:0 2px 6px rgba(79,70,229,0.1);
     }}
+    #hc-wrap button::before {{
+        content:''; position:absolute; top:0; left:-100%; width:100%; height:100%;
+        background:linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent);
+        transition:left .5s;
+    }}
+    #hc-wrap button:hover::before {{ left:100%; }}
     #hc-wrap button:hover {{
-        background:rgba(79,70,229,0.07); border-color:#4F46E5;
-        transform:translateY(-1px); box-shadow:0 3px 10px rgba(79,70,229,0.18);
+        background:linear-gradient(135deg,#e0e7ff,#ddd6fe);
+        border-color:#4F46E5; transform:translateY(-2px);
+        box-shadow:0 4px 12px rgba(79,70,229,0.25);
     }}
+    #hc-wrap button:active {{ transform:translateY(0); }}
     #hc-wrap .hb {{
-        background:linear-gradient(135deg,#4F46E5,#7C3AED); color:#fff; border:none;
-        box-shadow:0 2px 8px rgba(79,70,229,0.25);
+        background:linear-gradient(135deg,#4F46E5,#7C3AED);
+        color:#fff; border:none;
+        box-shadow:0 3px 10px rgba(79,70,229,0.35);
     }}
     #hc-wrap .hb:hover {{
-        box-shadow:0 4px 14px rgba(79,70,229,0.4); transform:translateY(-1px);
+        background:linear-gradient(135deg,#4338ca,#6d28d9);
+        box-shadow:0 5px 18px rgba(79,70,229,0.5); transform:translateY(-2px);
     }}
+    #hc-wrap .hb:active {{ transform:translateY(0); }}
     </style>
     <div id="hc-wrap">
       <button onclick="window.parent.location.search='?lang={target_lang}'">{lang_btn_text}</button>
@@ -909,7 +925,12 @@ def create_top_right_controls():
             if (!hdr) {{ setTimeout(tryInject, 150); return; }}
             if (hdr.querySelector('#hc-wrap')) return;
             var c = hc.cloneNode(true);
-            hdr.appendChild(c);
+            var deployBtn = hdr.querySelector('button[data-testid="stDeployButton"]');
+            if (deployBtn) {{
+                deployBtn.parentNode.insertBefore(c, deployBtn);
+            }} else {{
+                hdr.insertBefore(c, hdr.lastElementChild);
+            }}
         }}
         tryInject();
     }})();
