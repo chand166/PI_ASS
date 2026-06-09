@@ -845,96 +845,67 @@ def create_tooltip(text, tooltip_text):
 
 
 # ==================== 顶部控制栏 ====================
-def _sync_header_params():
-    """从 URL query params 同步语言和帮助状态到 session_state"""
-    qp = st.query_params
-    if 'lang' in qp:
-        val = qp['lang']
-        if val in ('zh', 'en') and val != st.session_state.get('lang', 'zh'):
-            st.session_state.lang = val
-            st.query_params.clear()
-            st.rerun()
-    if 'toggle_help' in qp:
-        st.session_state.show_help_dialog = not st.session_state.get('show_help_dialog', False)
-        st.query_params.clear()
-        st.rerun()
-
-
 def create_top_right_controls():
-    """在 Streamlit header 栏 Deploy 按钮左侧注入：语言切换 + 使用说明"""
-    _sync_header_params()
-
+    """语言切换 + 使用说明：Streamlit 原生按钮 + CSS 固定定位到 header 区域"""
     lang = st.session_state.get('lang', 'zh')
     page = st.session_state.get('page', '')
     page_key = get_page_key(page, lang) if page else 'nav_home'
 
-    # 计算切换目标
-    target_lang = 'en' if lang == 'zh' else 'zh'
-    lang_btn_text = '🇺🇸 English' if lang == 'zh' else '🇨🇳 中文'
+    # 语言按钮文本：不用缩写
+    lang_btn_text = 'English' if lang == 'zh' else '中文'
     help_btn_text = '📖 使用说明' if lang == 'zh' else '📖 User Guide'
 
-    # 注入到 Streamlit header（iframe → parent document）
-    st.components.v1.html(f"""
-    <script>
-    (function() {{
-        function tryInject() {{
-            var hdr = window.parent.document.querySelector('header[data-testid="stHeader"]');
-            if (!hdr) {{ setTimeout(tryInject, 150); return; }}
-            if (hdr.querySelector('#hc-wrap')) return;
+    # CSS: 固定定位到 header Deploy 按钮左侧
+    st.markdown("""
+    <style>
+    /* 固定定位容器 */
+    div[data-testid="stVerticalBlock"]:has(> div > div > button[data-testid="stBaseButton-secondary"]) {
+        /* fallback */
+    }
+    div[data-testid="element-container"]:has(> div.st-key-top_ctrl) {
+        position: fixed;
+        top: 6px;
+        right: 140px;
+        z-index: 999;
+    }
+    /* 让按钮看起来和 Deploy 一致 */
+    div.st-key-top_ctrl button {
+        display: inline-flex !important;
+        align-items: center;
+        padding: 0 12px !important;
+        border-radius: 8px !important;
+        min-height: 28px !important;
+        border: none !important;
+        background: transparent !important;
+        color: rgb(49, 51, 63) !important;
+        font-size: 14px !important;
+        line-height: 28px !important;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    div.st-key-top_ctrl button:hover {
+        background: rgba(49, 51, 63, 0.04) !important;
+    }
+    div.st-key-top_ctrl [data-testid="column"] {
+        flex: none !important;
+        width: auto !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-            // Inject CSS into parent document
-            if (!window.parent.document.querySelector('#hc-style')) {{
-                var style = window.parent.document.createElement('style');
-                style.id = 'hc-style';
-                style.textContent = `
-                    #hc-wrap {{ display:flex; align-items:center; gap:8px; margin-right:8px; }}
-                    #hc-wrap button {{
-                        display:inline-flex; align-items:center; justify-content:center;
-                        font-weight:400; padding:0 8px; border-radius:8px;
-                        min-height:28px; border:none;
-                        background:transparent; color:rgb(49,51,63);
-                        font-size:14px; line-height:28px;
-                        cursor:pointer; white-space:nowrap;
-                        font-family:'Plus Jakarta Sans','Segoe UI','PingFang SC',sans-serif;
-                    }}
-                    #hc-wrap button:hover {{
-                        background:rgba(49,51,63,0.04);
-                    }}
-                `;
-                window.parent.document.head.appendChild(style);
-            }}
+    # 用 st.container + key 来标记（CSS 通过 key class 定位）
+    with st.container(key='top_ctrl'):
+        c1, c2, _ = st.columns([0.08, 0.12, 0.8])
+        with c1:
+            if st.button(lang_btn_text, key='top_lang_btn'):
+                st.session_state.lang = 'en' if lang == 'zh' else 'zh'
+                st.rerun()
+        with c2:
+            if st.button(help_btn_text, key='top_help_btn'):
+                st.session_state.show_help_dialog = not st.session_state.get('show_help_dialog', False)
+                st.rerun()
 
-            // Create container
-            var wrap = window.parent.document.createElement('div');
-            wrap.id = 'hc-wrap';
-
-            // Language button
-            var langBtn = window.parent.document.createElement('button');
-            langBtn.textContent = '{lang_btn_text}';
-            langBtn.onclick = function() {{ window.parent.location.search = '?lang={target_lang}'; }};
-
-            // Help button
-            var helpBtn = window.parent.document.createElement('button');
-            helpBtn.textContent = '{help_btn_text}';
-            helpBtn.onclick = function() {{ window.parent.location.search = '?toggle_help=1'; }};
-
-            wrap.appendChild(langBtn);
-            wrap.appendChild(helpBtn);
-
-            // Insert before Deploy button
-            var deployBtn = hdr.querySelector('[data-testid="stDeployButton"]');
-            if (deployBtn && deployBtn.parentNode) {{
-                deployBtn.parentNode.insertBefore(wrap, deployBtn);
-            }} else {{
-                hdr.insertBefore(wrap, hdr.lastElementChild);
-            }}
-        }}
-        tryInject();
-    }})();
-    </script>
-    """, height=0)
-
-    # 显示使用说明 expander
+    # 使用说明 expander
     if st.session_state.get('show_help_dialog', False):
         with st.expander('📖 ' + ('使用说明' if lang == 'zh' else 'User Guide'), expanded=True):
             col_close, _ = st.columns([1, 8])
@@ -1100,21 +1071,21 @@ def create_sidebar():
     output_label = t('btn_output', lang)
     
     with col1:
-        if st.button(project_label, use_container_width=True):
+        if st.button(project_label, width='stretch'):
             st.toast(f"Project: {Config.BASE_DIR}")
     
     with col2:
-        if st.button(data_label, use_container_width=True):
+        if st.button(data_label, width='stretch'):
             st.toast(f"Data: {Config.DATA_DIR}")
     
     col3, col4 = st.sidebar.columns(2)
     
     with col3:
-        if st.button(model_label, use_container_width=True):
+        if st.button(model_label, width='stretch'):
             st.toast(f"Models: {Config.MODEL_DIR}")
     
     with col4:
-        if st.button(output_label, use_container_width=True):
+        if st.button(output_label, width='stretch'):
             st.toast(f"Output: {Config.OUTPUT_DIR}")
     
     # 底部信息
@@ -1213,7 +1184,7 @@ def create_home_page():
             </div>
             """, unsafe_allow_html=True)
             
-            if st.button(t('home_enter_module', lang), key=key, use_container_width=True):
+            if st.button(t('home_enter_module', lang), key=key, width='stretch'):
                 st.session_state.nav_radio = page_name
                 st.rerun()
     
@@ -1276,7 +1247,7 @@ def create_home_page():
             {name_col: k, "SMILES": v[:35] + "..." if len(v) > 35 else v} 
             for k, v in Config.DIANHYDRIDES.items()
         ])
-        st.dataframe(da_df, hide_index=True, use_container_width=True)
+        st.dataframe(da_df, hide_index=True, width='stretch')
         
     with col2:
         st.markdown(f"""
@@ -1292,7 +1263,7 @@ def create_home_page():
             {name_col: k, "SMILES": v[:35] + "..." if len(v) > 35 else v} 
             for k, v in Config.DIAMINES.items()
         ])
-        st.dataframe(di_df, hide_index=True, use_container_width=True)
+        st.dataframe(di_df, hide_index=True, width='stretch')
     
     total_comb = len(Config.DIANHYDRIDES) * len(Config.DIAMINES)
     
@@ -1434,7 +1405,7 @@ def create_scoring_page():
                 st.success("评分已继续")
     
     # 开始评分按钮
-    if st.button("▶ 开始评分", type="primary", use_container_width=True):
+    if st.button("▶ 开始评分", type="primary", width='stretch'):
         if not input_file:
             st.error("请先上传评分文件")
         else:
@@ -1449,7 +1420,7 @@ def create_scoring_page():
     if st.session_state.scoring_results is not None:
         st.markdown("---")
         st.subheader("📋 历史结果")
-        st.dataframe(st.session_state.scoring_results, use_container_width=True)
+        st.dataframe(st.session_state.scoring_results, width='stretch')
 
 
 def scoreLiterature(input_file, scoring_prompt, api_url, api_key, 
@@ -1613,7 +1584,7 @@ def create_download_page():
             timeout = st.slider("超时时间(秒)", 10, 120, 30)
     
     # 开始下载
-    if st.button("▶ 开始下载", type="primary", use_container_width=True):
+    if st.button("▶ 开始下载", type="primary", width='stretch'):
         if not doi_file:
             st.error("请先上传DOI文件")
         else:
@@ -1720,7 +1691,7 @@ def create_extraction_page():
         )
     
     # 开始提取
-    if st.button("▶ 开始提取", type="primary", use_container_width=True):
+    if st.button("▶ 开始提取", type="primary", width='stretch'):
         if not pdf_folder or not Path(pdf_folder).exists():
             st.error("请选择有效的文献文件夹")
         else:
@@ -1772,7 +1743,7 @@ def create_extraction_page():
                         st.success(f"提取完成！共 {len(results)} 条记录")
                         st.success(f"结果已保存到: {output_file}")
                         
-                        st.dataframe(df, use_container_width=True)
+                        st.dataframe(df, width='stretch')
                         st.session_state.extraction_results = df
                         
                 except Exception as e:
@@ -1782,7 +1753,7 @@ def create_extraction_page():
     if st.session_state.extraction_results is not None:
         st.markdown("---")
         st.subheader("📋 提取结果")
-        st.dataframe(st.session_state.extraction_results, use_container_width=True)
+        st.dataframe(st.session_state.extraction_results, width='stretch')
 
 
 # ==================== 描述符计算 ====================
@@ -1823,7 +1794,7 @@ def create_descriptors_page():
         
         if smiles_col:
             st.success(f"找到SMILES列: {smiles_col}")
-            st.dataframe(df[[smiles_col]].head(), use_container_width=True)
+            st.dataframe(df[[smiles_col]].head(), width='stretch')
         else:
             st.error("未找到SMILES列")
             return
@@ -1842,7 +1813,7 @@ def create_descriptors_page():
             morgan_radius = st.number_input("Morgan半径", min_value=1, max_value=4, value=2)
     
     # 开始计算
-    if st.button("▶ 计算描述符", type="primary", use_container_width=True):
+    if st.button("▶ 计算描述符", type="primary", width='stretch'):
         if not input_file:
             st.error("请先上传分子数据文件")
         else:
@@ -1890,7 +1861,7 @@ def create_descriptors_page():
                     st.success(f"计算完成！共 {len(results)} 个分子")
                     st.success(f"结果已保存到: {output_file}")
                     
-                    st.dataframe(results_df, use_container_width=True)
+                    st.dataframe(results_df, width='stretch')
                     
                 except Exception as e:
                     st.error(f"计算失败: {str(e)}")
@@ -1917,7 +1888,7 @@ def create_training_page():
     if input_file:
         df = pd.read_csv(input_file)
         st.info(f"样本数: {len(df)}, 特征数: {df.shape[1]}")
-        st.dataframe(df.head(), use_container_width=True)
+        st.dataframe(df.head(), width='stretch')
     
     # 目标选择
     st.subheader("🎯 预测目标")
@@ -1955,7 +1926,7 @@ def create_training_page():
         )
     
     # 开始训练
-    if st.button("▶ 训练模型", type="primary", use_container_width=True):
+    if st.button("▶ 训练模型", type="primary", width='stretch'):
         if not input_file:
             st.error("请先上传训练数据")
         else:
@@ -2044,7 +2015,7 @@ def create_training_page():
     if st.session_state.training_results is not None:
         st.markdown("---")
         st.subheader("📋 训练结果")
-        st.dataframe(st.session_state.training_results, use_container_width=True)
+        st.dataframe(st.session_state.training_results, width='stretch')
 
 
 # ==================== 高通量筛选 ====================
@@ -2080,7 +2051,7 @@ def create_hts_page():
             {"名称": k, "SMILES": v[:30] + "..." if len(v) > 30 else v} 
             for k, v in Config.DIANHYDRIDES.items()
         ])
-        st.dataframe(da_df, hide_index=True, use_container_width=True)
+        st.dataframe(da_df, hide_index=True, width='stretch')
         
     with col2:
         st.markdown("""
@@ -2093,7 +2064,7 @@ def create_hts_page():
             {"名称": k, "SMILES": v[:30] + "..." if len(v) > 30 else v} 
             for k, v in Config.DIAMINES.items()
         ])
-        st.dataframe(di_df, hide_index=True, use_container_width=True)
+        st.dataframe(di_df, hide_index=True, width='stretch')
     
     total = len(Config.DIANHYDRIDES) * len(Config.DIAMINES)
     
@@ -2135,7 +2106,7 @@ def create_hts_page():
         output_format = st.selectbox("输出格式", ["CSV", "Excel"])
     
     # 开始筛选
-    if st.button("🚀 开始高通量筛选", type="primary", use_container_width=True):
+    if st.button("🚀 开始高通量筛选", type="primary", width='stretch'):
         with st.spinner("高通量筛选进行中..."):
             try:
                 import random
@@ -2168,7 +2139,7 @@ def create_hts_page():
                 st.success(f"筛选完成！共 {len(results)} 种组合")
                 st.success(f"结果已保存到: {output_file}")
                 
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df, width='stretch')
                 st.session_state.hts_results = df
                 
             except Exception as e:
@@ -2195,7 +2166,7 @@ def create_hts_page():
             (filtered_df['介电常数'] <= filter_dielectric[1])
         ]
         
-        st.dataframe(filtered_df, use_container_width=True)
+        st.dataframe(filtered_df, width='stretch')
         
         csv = filtered_df.to_csv(index=False)
         st.download_button(
@@ -2293,7 +2264,7 @@ def create_settings_page():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("💾 保存配置", type="primary", use_container_width=True):
+        if st.button("💾 保存配置", type="primary", width='stretch'):
             config = {
                 'api_url': api_url,
                 'api_key': api_key,
@@ -2311,7 +2282,7 @@ def create_settings_page():
             st.success(f"配置已保存到: {config_file}")
     
     with col2:
-        if st.button("🔄 重置默认", use_container_width=True):
+        if st.button("🔄 重置默认", width='stretch'):
             st.success("配置已重置为默认值")
 
 
