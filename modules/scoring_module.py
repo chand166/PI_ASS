@@ -20,7 +20,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # 添加文件日志
-log_file = Path("D:/PI_Project/output/scoring_debug.log")
+log_file = Path("D:/PI_ASS/output/scoring_debug.log")
 
 
 class LiteratureScorer:

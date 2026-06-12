@@ -750,25 +750,25 @@ class Config:
     DEFAULT_SCORE_THRESHOLD = 0.8
     DEFAULT_ITERATIONS = 500
     DEFAULT_PARALLEL_WORKERS = 4
-    
-    # 二酐数据库
+
+    # 二酐数据库 (与 hts_module.py 保持一致)
     DIANHYDRIDES = {
-        'PMDA': 'O=ClC(=O)c2ccccc2Cl=O',
-        'BPDA': 'O=ClC(=O)c2ccc3c2C3=O',
-        'ODPA': 'O=ClC(=O)c2ccc(Oc3ccc(C(=O)O5)cc3)cc2Cl=O',
-        'BTDA': 'O=ClC(=O)c2ccc3c2C(=O)c4ccc(cc4C3=O)C(=O)Ol',
-        '6FDA': 'O=ClC(=O)C(F)(F)C(F)(F)C(F)(F)Cl=O'
+        'PMDA': 'O=C1C(=O)c2ccccc2C1=O',
+        'BPDA': 'O=C1C(=O)c2ccc3c2C3=O',
+        'ODPA': 'O=C1C(=O)c2ccc(Oc3ccc(C(=O)O5)cc3)cc2C1=O',
+        'BTDA': 'O=C1C(=O)c2ccc3c2C(=O)c4ccc(cc4C3=O)C(=O)O1',
+        '6FDA': 'O=C1C(=O)C(F)(F)C(F)(F)C(F)(F)C1=O',
     }
-    
-    # 二胺数据库
+
+    # 二胺数据库 (与 hts_module.py 保持一致)
     DIAMINES = {
-        'ODA': 'COclccc(N)cc1OC',
-        'MDA': 'Cclccc(N)cc1',
+        'ODA': 'COc1ccc(N)cc1OC',
+        'MDA': 'Cc1ccc(N)cc1',
         'DDE': 'NCCNCCN',
-        'm- PDA': 'Nclcccc(N)cl',
-        'p- PDA': 'Nclccc(N)cc1'
+        'm-PDA': 'Nc1cccc(N)c1',
+        'p-PDA': 'Nc1ccc(N)cc1',
     }
-    
+
     # 性能目标
     PERFORMANCE_TARGETS = [
         ('玻璃化转变温度 Tg', 'tg', '°C'),
@@ -796,7 +796,7 @@ class Config:
     DEFAULT_EXTRACTION_PROMPT = """从这篇聚酰亚胺论文中提取以下信息：
 1. 二酐名称和SMILES
 2. 二胺名称和SMILES  
-3. 性能数据：Ig、介电常数、透过率、拉伸强度等
+3. 性能数据：Tg、介电常数、透过率、拉伸强度等
 4. 合成难度评级（简单/中等/困难）
 5. 材料估算价格
 
@@ -808,6 +808,22 @@ def init_session_state():
     """初始化会话状态"""
     if 'scoring_results' not in st.session_state:
         st.session_state.scoring_results = None
+    if 'scoring_df' not in st.session_state:
+        st.session_state.scoring_df = None
+    if 'scoring_title_col' not in st.session_state:
+        st.session_state.scoring_title_col = None
+    if 'scoring_abstract_col' not in st.session_state:
+        st.session_state.scoring_abstract_col = None
+    if 'scoring_doi_col' not in st.session_state:
+        st.session_state.scoring_doi_col = None
+    if 'scoring_show_input' not in st.session_state:
+        st.session_state.scoring_show_input = False
+    if 'scoring_show_output' not in st.session_state:
+        st.session_state.scoring_show_output = False
+    if 'scoring_output_folder' not in st.session_state:
+        st.session_state.scoring_output_folder = str(Config.OUTPUT_DIR)
+    if 'scoring_output_filename' not in st.session_state:
+        st.session_state.scoring_output_filename = "scoring_results.xlsx"
     if 'extraction_results' not in st.session_state:
         st.session_state.extraction_results = None
     if 'training_results' not in st.session_state:
@@ -936,34 +952,7 @@ def create_top_right_controls():
             st.markdown(t('help_faq', lang))
 
 
-@st.dialog('📖 User Guide / 使用说明', width='large')
-def show_help_dialog(page_key: str, lang: str):
-    """显示当前模块的使用说明"""
-    
-    # 关闭按钮
-    if st.button('✖ ' + ('关闭' if lang == 'zh' else 'Close'), key='close_help'):
-        st.session_state.show_help_dialog = False
-        st.rerun()
-    
-    st.markdown('---')
-    
-    # 根据当前页面显示对应说明
-    help_key_map = {
-        'nav_home': 'help_overview',
-        'nav_scoring': 'help_m_scoring',
-        'nav_download': 'help_m_download',
-        'nav_extraction': 'help_m_extraction',
-        'nav_descriptors': 'help_m_descriptors',
-        'nav_training': 'help_m_training',
-        'nav_hts': 'help_m_hts',
-        'nav_settings': 'help_tips',
-        'nav_help': 'help_faq'
-    }
-    
-    help_key = help_key_map.get(page_key, 'help_overview')
-    help_content = t(help_key, lang)
-    
-    st.markdown(help_content)
+
 
 
 # ==================== 侧边栏 ====================
@@ -1071,21 +1060,21 @@ def create_sidebar():
     output_label = t('btn_output', lang)
     
     with col1:
-        if st.button(project_label, width='stretch'):
+        if st.button(project_label, use_container_width=True):
             st.toast(f"Project: {Config.BASE_DIR}")
     
     with col2:
-        if st.button(data_label, width='stretch'):
+        if st.button(data_label, use_container_width=True):
             st.toast(f"Data: {Config.DATA_DIR}")
     
     col3, col4 = st.sidebar.columns(2)
     
     with col3:
-        if st.button(model_label, width='stretch'):
+        if st.button(model_label, use_container_width=True):
             st.toast(f"Models: {Config.MODEL_DIR}")
     
     with col4:
-        if st.button(output_label, width='stretch'):
+        if st.button(output_label, use_container_width=True):
             st.toast(f"Output: {Config.OUTPUT_DIR}")
     
     # 底部信息
@@ -1184,7 +1173,7 @@ def create_home_page():
             </div>
             """, unsafe_allow_html=True)
             
-            if st.button(t('home_enter_module', lang), key=key, width='stretch'):
+            if st.button(t('home_enter_module', lang), key=key, use_container_width=True):
                 st.session_state.nav_radio = page_name
                 st.rerun()
     
@@ -1247,7 +1236,7 @@ def create_home_page():
             {name_col: k, "SMILES": v[:35] + "..." if len(v) > 35 else v} 
             for k, v in Config.DIANHYDRIDES.items()
         ])
-        st.dataframe(da_df, hide_index=True, width='stretch')
+        st.dataframe(da_df, hide_index=True, use_container_width=True)
         
     with col2:
         st.markdown(f"""
@@ -1263,7 +1252,7 @@ def create_home_page():
             {name_col: k, "SMILES": v[:35] + "..." if len(v) > 35 else v} 
             for k, v in Config.DIAMINES.items()
         ])
-        st.dataframe(di_df, hide_index=True, width='stretch')
+        st.dataframe(di_df, hide_index=True, use_container_width=True)
     
     total_comb = len(Config.DIANHYDRIDES) * len(Config.DIAMINES)
     
@@ -1294,251 +1283,302 @@ def create_home_page():
 
 # ==================== 文献评分 ====================
 def create_scoring_page():
-    """文献评分页面 - 高端设计"""
+    """文献评分页面 - 可点击卡片 + 自动列识别 + 多评委评分"""
+    lang = st.session_state.get('lang', 'zh')
+
     st.title("📚 文献评分")
-    st.markdown("<p style='color: #64748B; margin-bottom: 24px;'>使用多评委AI系统筛选高相关度聚酰亚胺文献</p>", unsafe_allow_html=True)
-    
-    # 步骤指示器
-    st.markdown("""
-    <div class="step-indicator">
-        <div class="step step-active">1</div>
-        <div class="step-line step-line-active"></div>
-        <div class="step step-pending">2</div>
-        <div class="step-line"></div>
-        <div class="step step-pending">3</div>
-    </div>
-    <div style="display: flex; justify-content: space-between; margin-top: -16px; margin-bottom: 24px; padding: 0 20px;">
-        <span style="font-size: 0.75rem; color: #4F46E5; font-weight: 600;">配置参数</span>
-        <span style="font-size: 0.75rem; color: #64748B;">上传文件</span>
-        <span style="font-size: 0.75rem; color: #64748B;">开始评分</span>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # 配置区域 - 玻璃拟态卡片
-    with st.expander("⚙️ 评分配置", expanded=True):
-        st.markdown("""
-        <div style="background: rgba(255,255,255,0.5); border-radius: 12px; padding: 20px; margin-bottom: 16px;">
-        </div>
-        """, unsafe_allow_html=True)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            expert_count = st.number_input(
-                "👥 专家数量",
-                min_value=1, max_value=20, 
-                value=Config.DEFAULT_EXPERT_COUNT,
-                help="同时调用多个AI进行评分，取平均分"
-            )
-            
-        with col2:
-            score_threshold = st.number_input(
-                "📊 评分阈值",
-                min_value=0.1, max_value=1.0, 
-                value=Config.DEFAULT_SCORE_THRESHOLD, step=0.1,
-                help="低于此分数的文献将被排除"
-            )
-        
-    # 筛选依据
-    with st.expander("📝 筛选依据（可自定义）", expanded=True):
-        scoring_prompt = st.text_area(
-            "评分提示词",
-            value=Config.DEFAULT_SCORING_PROMPT,
-            height=200
-        )
-    
-    # API配置
-    with st.expander("🔗 API配置", expanded=False):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            api_url = st.text_input("API地址", value=Config.MINIMAX_API)
-            
-        with col2:
-            api_key = st.text_input("API密钥", value=Config.DEFAULT_API_KEY, type="password")
-    
-    st.markdown("---")
-    
-    # 输入输出 - 卡片布局
+    st.markdown("<p style='color: #64748B; margin-bottom: 24px;'>上传Excel文献数据，AI多评委自动评分筛选</p>", unsafe_allow_html=True)
+
+    # === 两列可点击卡片 ===
     col1, col2 = st.columns(2)
-    
+
     with col1:
-        st.markdown("""
-        <div class="card" style="margin: 0;">
-            <h3 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
-                <span>📥</span> 输入文件
-            </h3>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        input_file = st.file_uploader(
-            "上传评分文件（CSV/Excel）",
-            type=['csv', 'xlsx'],
-            help="文件格式：第一列标题，第二列摘要，第三列DOI（可选）",
-            label_visibility="collapsed"
-        )
-        
-    with col2:
-        st.markdown("""
-        <div class="card" style="margin: 0;">
-            <h3 style="margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px;">
-                <span>📤</span> 输出配置
-            </h3>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        output_folder = st.text_input("输出文件夹", value=str(Config.OUTPUT_DIR))
-    
-    # 评分控制
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.markdown("**评分进度**")
-        progress_bar = st.progress(0)
-        progress_text = st.empty()
-    
-    with col2:
-        if st.button("⏸ 暂停", key="pause_scoring"):
-            st.session_state.scoring_pause = not st.session_state.scoring_pause
-            if st.session_state.scoring_pause:
-                st.info("评分已暂停")
-            else:
-                st.success("评分已继续")
-    
-    # 开始评分按钮
-    if st.button("▶ 开始评分", type="primary", width='stretch'):
-        if not input_file:
-            st.error("请先上传评分文件")
-        else:
-            st.session_state.scoring_pause = False
-            scoreLiterature(
-                input_file, scoring_prompt, api_url, api_key,
-                expert_count, score_threshold, output_folder,
-                progress_bar, progress_text
+        # 输入文件卡片（点击切换）
+        btn_label = "📥 输入文件" if lang == 'zh' else "📥 Input File"
+        if st.button(btn_label, key="toggle_input_card", use_container_width=True, type="secondary"):
+            st.session_state.scoring_show_input = not st.session_state.scoring_show_input
+
+        if st.session_state.scoring_show_input:
+            input_file = st.file_uploader(
+                "上传文献数据文件",
+                type=['xlsx', 'xls', 'csv'],
+                help="支持Excel（.xlsx/.xls）和CSV格式，自动识别标题/摘要/DOI列",
+                label_visibility="collapsed"
             )
-    
-    # 显示历史结果
+
+            if input_file is not None:
+                # 读取文件
+                try:
+                    if input_file.name.endswith('.csv'):
+                        df = pd.read_csv(input_file)
+                    else:
+                        df = pd.read_excel(input_file)
+                except Exception as e:
+                    st.error(f"文件读取失败: {e}")
+                    df = None
+
+                if df is not None:
+                    st.session_state.scoring_df = df
+
+                    # 自动识别列名
+                    title_col = abstract_col = doi_col = None
+                    title_kw = ['Article Title', '标题', 'Title', 'article title', 'Article title']
+                    abstract_kw = ['Abstract', '摘要', 'abstract']
+                    doi_kw = ['DOI', 'doi', 'Doi']
+
+                    for c in df.columns:
+                        cs = str(c).strip()
+                        if any(k.lower() == cs.lower() for k in title_kw):
+                            title_col = c
+                        if any(k.lower() == cs.lower() for k in abstract_kw):
+                            abstract_col = c
+                        if any(k.lower() == cs.lower() for k in doi_kw):
+                            doi_col = c
+
+                    st.session_state.scoring_title_col = title_col
+                    st.session_state.scoring_abstract_col = abstract_col
+                    st.session_state.scoring_doi_col = doi_col
+
+                    st.info(f"📊 读取到 {len(df)} 条文献记录")
+
+                    ci1, ci2, ci3 = st.columns([1, 1, 1])
+                    with ci1:
+                        if title_col:
+                            st.success(f"✅ 标题: {title_col}")
+                        else:
+                            tc = st.selectbox("⚠️ 选择标题列", df.columns, key="sel_title")
+                            st.session_state.scoring_title_col = tc
+                    with ci2:
+                        if abstract_col:
+                            st.success(f"✅ 摘要: {abstract_col}")
+                        else:
+                            ac = st.selectbox("⚠️ 选择摘要列", df.columns, key="sel_abstract")
+                            st.session_state.scoring_abstract_col = ac
+                    with ci3:
+                        if doi_col:
+                            st.success(f"✅ DOI: {doi_col}")
+                        else:
+                            st.info("DOI列可选，可忽略")
+
+                    # 预览
+                    show_cols = [c for c in [title_col, abstract_col, doi_col] if c]
+                    st.dataframe(df[show_cols].head(5), use_container_width=True, hide_index=True)
+
+    with col2:
+        # 输出配置卡片（点击切换）
+        btn_label2 = "📤 输出配置" if lang == 'zh' else "📤 Output Config"
+        if st.button(btn_label2, key="toggle_output_card", use_container_width=True, type="secondary"):
+            st.session_state.scoring_show_output = not st.session_state.scoring_show_output
+
+        if st.session_state.scoring_show_output:
+            of = st.text_input("输出文件夹", value=st.session_state.scoring_output_folder, key="out_folder")
+            fn = st.text_input("输出文件名", value=st.session_state.scoring_output_filename, key="out_fname")
+            st.session_state.scoring_output_folder = of
+            st.session_state.scoring_output_filename = fn
+
+            st.caption("输出格式: 标题 | 摘要 | DOI | 平均评分 | 评分依据")
+
+    # === 评分参数 ===
+    st.markdown("---")
+    with st.expander("⚙️ 评分参数", expanded=True):
+        col_e1, col_e2, col_e3 = st.columns(3)
+        with col_e1:
+            expert_count = st.number_input("👥 专家数量", min_value=1, max_value=20, value=3,
+                                           help="每篇文献由N个AI评委独立评分后取平均")
+        with col_e2:
+            score_threshold = st.number_input("📊 评分阈值", min_value=0.1, max_value=1.0,
+                                               value=Config.DEFAULT_SCORE_THRESHOLD, step=0.1)
+        with col_e3:
+            max_workers = st.number_input("⚡ 并发数", min_value=1, max_value=10, value=3,
+                                          help="同时评分多少篇文献")
+
+    with st.expander("📝 评分提示词", expanded=True):
+        scoring_prompt = st.text_area("", value=Config.DEFAULT_SCORING_PROMPT, height=150)
+
+    with st.expander("🔗 API配置", expanded=False):
+        col_a1, col_a2 = st.columns(2)
+        with col_a1:
+            api_url = st.text_input("API地址", value=Config.MINIMAX_API)
+        with col_a2:
+            api_key = st.text_input("API密钥", value=Config.DEFAULT_API_KEY, type="password")
+
+    # === 开始评分 ===
+    st.markdown("---")
+    if st.button("▶ 开始评分", type="primary", use_container_width=True):
+        df = st.session_state.get('scoring_df')
+        tcol = st.session_state.get('scoring_title_col')
+        if df is None:
+            st.error("请先上传文献数据文件")
+        elif not tcol:
+            st.error("请先选择/确认标题列")
+        else:
+            scoreLiterature_v2(
+                df,
+                st.session_state.scoring_title_col,
+                st.session_state.scoring_abstract_col,
+                st.session_state.scoring_doi_col,
+                scoring_prompt, api_url, api_key,
+                expert_count, score_threshold, max_workers,
+                st.session_state.scoring_output_folder,
+                st.session_state.scoring_output_filename
+            )
+
+    # === 历史结果 ===
     if st.session_state.scoring_results is not None:
         st.markdown("---")
-        st.subheader("📋 历史结果")
-        st.dataframe(st.session_state.scoring_results, width='stretch')
+        st.subheader("📋 评分结果")
+        st.dataframe(st.session_state.scoring_results, use_container_width=True)
+        csv_data = st.session_state.scoring_results.to_csv(index=False)
+        st.download_button("📥 下载CSV", csv_data, "scoring_results.csv", "text/csv")
 
 
-def scoreLiterature(input_file, scoring_prompt, api_url, api_key, 
-                    expert_count, score_threshold, output_folder,
-                    progress_bar, progress_text):
-    """执行文献评分"""
-    try:
-        import requests
-        
-        # 读取输入文件
-        if input_file.name.endswith('.csv'):
-            df = pd.read_csv(input_file)
-        else:
-            df = pd.read_excel(input_file)
-        
-        st.info(f"读取到 {len(df)} 条文献记录")
-        
-        # 准备评分
-        results = []
-        total = len(df)
-        
-        for idx, row in df.iterrows():
-            if st.session_state.scoring_pause:
-                st.warning("评分已暂停")
-                break
-            
-            try:
-                # 调用API进行评分（简化版）
-                title = str(row.iloc[0]) if len(row) > 0 else ""
-                abstract = str(row.iloc[1]) if len(row) > 1 else ""
-                doi = str(row.iloc[2]) if len(row) > 2 else ""
-                
-                # 模拟评分请求
-                payload = {
-                    "prompt": f"{scoring_prompt}\n\n标题: {title}\n摘要: {abstract}",
-                    "max_tokens": 200
-                }
-                
+def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
+                      scoring_prompt, api_url, api_key,
+                      expert_count, score_threshold, max_workers,
+                      output_folder, output_filename):
+    """执行文献评分 v2：多评委并行评分 + 列名自动识别 + Excel输出"""
+    import requests
+    import re
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import time
+    from pathlib import Path
+
+    headers = {"Authorization": f"Bearer {api_key}"}
+    results = []
+    total = len(df)
+
+    progress_bar = st.progress(0)
+    progress_text = st.empty()
+    status_text = st.empty()
+
+    def call_expert(title, abstract, prompt_template):
+        """调用单个AI专家评分"""
+        full_prompt = f"""请作为聚酰亚胺材料领域专家进行文献评分。
+
+{prompt_template}
+
+文献标题: {title}
+
+文献摘要: {abstract}
+
+请根据以上摘要进行分析，并给出评分。
+请严格按照以下格式输出：
+评分依据：[简要说明评分原因]
+最终评分：【0.XX】
+
+例如：
+评分依据：该文献研究了聚酰亚胺在显示器领域的应用，关注了热性能和机械性能，符合研究领域
+最终评分：【0.85】"""
+        payload = {
+            "model": Config.MINIMAX_MODEL,
+            "messages": [{"role": "user", "content": full_prompt}],
+            "max_tokens": 300,
+            "temperature": 0.7
+        }
+        try:
+            resp = requests.post(
+                f"{api_url}/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=60
+            )
+            if resp.status_code == 200:
+                return resp.json()['choices'][0]['message']['content']
+        except Exception:
+            pass
+        return None
+
+    def score_one_paper(idx, row):
+        """对单篇文献进行多专家评分"""
+        title = str(row.get(title_col, "")) if pd.notna(row.get(title_col, "")) else ""
+        abstract = str(row.get(abstract_col, "")) if abstract_col and pd.notna(row.get(abstract_col, "")) else ""
+        doi = str(row.get(doi_col, "")) if doi_col and pd.notna(row.get(doi_col, "")) else ""
+        if not title:
+            return None
+
+        scores = []
+        reasons = []
+        pool_size = min(expert_count, max_workers)
+        with ThreadPoolExecutor(max_workers=pool_size) as pool:
+            futs = [pool.submit(call_expert, title, abstract, scoring_prompt) for _ in range(expert_count)]
+            for f in as_completed(futs):
                 try:
-                    resp = requests.post(
-                        f"{api_url}/completions",
-                        json=payload,
-                        headers={"Authorization": f"Bearer {api_key}"},
-                        timeout=30
-                    )
-                    
-                    if resp.status_code == 200:
-                        result_text = resp.json().get('choices', [{}])[0].get('text', '')
-                        # 简单解析评分
-                        import re
-                        score_match = re.search(r'(\d+\.?\d*)', result_text)
-                        score = float(score_match.group(1)) / 10 if score_match else 0.5
-                    else:
-                        score = 0.5
-                except:
-                    score = 0.5
-                
-                selected = score >= score_threshold
-                
-                results.append({
-                    '标题': title[:50],
-                    'DOI': doi,
-                    '评分': round(score, 3),
-                    '入选': '✓' if selected else '✗'
-                })
-                
-            except Exception as e:
-                results.append({
-                    '标题': str(row.iloc[0])[:50] if len(row) > 0 else "",
-                    'DOI': "",
-                    '评分': 0.0,
-                    '入选': '✗'
-                })
-            
-            # 更新进度
-            progress = (idx + 1) / total
-            progress_bar.progress(progress)
-            progress_text.text(f"处理中: {idx + 1}/{total}")
-        
-        # 保存结果
-        results_df = pd.DataFrame(results)
-        
-        # 统计
-        selected_count = sum(1 for r in results if r['入选'] == '✓')
-        
-        # 显示结果卡片
-        st.markdown("""
-        <div style="
-            background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
-            border: 1px solid #6EE7B7;
-            border-radius: 16px;
-            padding: 24px;
-            margin: 24px 0;
-        ">
+                    txt = f.result(timeout=60)
+                    if not txt:
+                        continue
+                    # 解析【】中的分数
+                    m = re.search(r'【\s*([0-9.]+)\s*】', txt)
+                    if m:
+                        s = float(m.group(1))
+                        if s > 1:
+                            s /= 100
+                        scores.append(max(0.0, min(1.0, s)))
+                    # 解析评分依据
+                    rm = re.search(r'评分依据[：:]\s*(.+?)(?:最终评分|$)', txt, re.DOTALL)
+                    if rm:
+                        reasons.append(rm.group(1).strip())
+                except Exception:
+                    pass
+
+        avg = sum(scores) / len(scores) if scores else 0.0
+        basis = "; ".join(dict.fromkeys(r for r in reasons if r)) if reasons else ""
+        return {
+            '标题': title[:100] if len(title) > 100 else title,
+            '摘要': (abstract[:300] + "...") if len(abstract) > 300 else abstract,
+            'DOI': doi,
+            '平均评分': round(avg, 4),
+            '评分依据': basis
+        }
+
+    # 主循环
+    for idx, row in df.iterrows():
+        result = score_one_paper(idx, row)
+        if result:
+            results.append(result)
+        pct = (idx + 1) / total
+        progress_bar.progress(pct)
+        progress_text.text(f"进度: {idx + 1}/{total}")
+        title_preview = str(row.get(title_col, ""))[:60] if title_col else ""
+        status_text.text(f"当前: {title_preview}")
+
+    # 构建结果
+    results_df = pd.DataFrame(results)
+    output_path = Path(output_folder) / output_filename
+    results_df.to_excel(output_path, index=False)
+
+    selected = results_df[results_df['平均评分'] >= score_threshold] if not results_df.empty else pd.DataFrame()
+    sel_count = len(selected)
+
+    # 结果展示
+    st.markdown(f"""
+    <div style="
+        background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+        border: 1px solid #6EE7B7;
+        border-radius: 16px;
+        padding: 24px;
+        margin: 24px 0;
+    ">
+        <div style="font-size: 1.2rem; font-weight: 700; color: #064E3B; margin-bottom: 8px;">
+            ✅ 评分完成
         </div>
-        """, unsafe_allow_html=True)
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric("总文献数", len(results))
-        col2.metric("入选文献", selected_count)
-        col3.metric("入选率", f"{selected_count/len(results)*100:.1f}%")
-        
-        st.success(f"评分完成！共 {len(results)} 篇文献，{selected_count} 篇入选（≥{score_threshold}分）")
-        
-        # 保存到会话状态
-        st.session_state.scoring_results = results_df
-        
-        # 下载按钮
-        csv = results_df.to_csv(index=False)
-        st.download_button(
-            "📥 下载评分结果",
-            csv,
-            "scoring_results.csv",
-            "text/csv"
-        )
-        
-    except Exception as e:
-        st.error(f"评分失败: {str(e)}")
+        <div style="color: #047857;">结果已保存到: {output_path}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    mc1, mc2, mc3 = st.columns(3)
+    mc1.metric("总文献数", len(results))
+    mc2.metric("入选文献", sel_count)
+    mc3.metric("入选率", f"{sel_count/len(results)*100:.1f}%" if results else "0%")
+
+    if not results_df.empty:
+        st.dataframe(results_df, use_container_width=True)
+    st.session_state.scoring_results = results_df
+
+    # 也保存高分DOI列表
+    if sel_count > 0:
+        doi_path = output_path.with_name(output_path.stem + "_selected_dois.txt")
+        selected[['DOI']].to_csv(doi_path, index=False, header=False)
+        st.caption(f"入选DOI列表: {doi_path}")
 
 
 # ==================== 文献下载 ====================
@@ -1584,7 +1624,7 @@ def create_download_page():
             timeout = st.slider("超时时间(秒)", 10, 120, 30)
     
     # 开始下载
-    if st.button("▶ 开始下载", type="primary", width='stretch'):
+    if st.button("▶ 开始下载", type="primary", use_container_width=True):
         if not doi_file:
             st.error("请先上传DOI文件")
         else:
@@ -1691,7 +1731,7 @@ def create_extraction_page():
         )
     
     # 开始提取
-    if st.button("▶ 开始提取", type="primary", width='stretch'):
+    if st.button("▶ 开始提取", type="primary", use_container_width=True):
         if not pdf_folder or not Path(pdf_folder).exists():
             st.error("请选择有效的文献文件夹")
         else:
@@ -1743,7 +1783,7 @@ def create_extraction_page():
                         st.success(f"提取完成！共 {len(results)} 条记录")
                         st.success(f"结果已保存到: {output_file}")
                         
-                        st.dataframe(df, width='stretch')
+                        st.dataframe(df, use_container_width=True)
                         st.session_state.extraction_results = df
                         
                 except Exception as e:
@@ -1753,7 +1793,7 @@ def create_extraction_page():
     if st.session_state.extraction_results is not None:
         st.markdown("---")
         st.subheader("📋 提取结果")
-        st.dataframe(st.session_state.extraction_results, width='stretch')
+        st.dataframe(st.session_state.extraction_results, use_container_width=True)
 
 
 # ==================== 描述符计算 ====================
@@ -1794,7 +1834,7 @@ def create_descriptors_page():
         
         if smiles_col:
             st.success(f"找到SMILES列: {smiles_col}")
-            st.dataframe(df[[smiles_col]].head(), width='stretch')
+            st.dataframe(df[[smiles_col]].head(), use_container_width=True)
         else:
             st.error("未找到SMILES列")
             return
@@ -1813,7 +1853,7 @@ def create_descriptors_page():
             morgan_radius = st.number_input("Morgan半径", min_value=1, max_value=4, value=2)
     
     # 开始计算
-    if st.button("▶ 计算描述符", type="primary", width='stretch'):
+    if st.button("▶ 计算描述符", type="primary", use_container_width=True):
         if not input_file:
             st.error("请先上传分子数据文件")
         else:
@@ -1861,7 +1901,7 @@ def create_descriptors_page():
                     st.success(f"计算完成！共 {len(results)} 个分子")
                     st.success(f"结果已保存到: {output_file}")
                     
-                    st.dataframe(results_df, width='stretch')
+                    st.dataframe(results_df, use_container_width=True)
                     
                 except Exception as e:
                     st.error(f"计算失败: {str(e)}")
@@ -1888,7 +1928,7 @@ def create_training_page():
     if input_file:
         df = pd.read_csv(input_file)
         st.info(f"样本数: {len(df)}, 特征数: {df.shape[1]}")
-        st.dataframe(df.head(), width='stretch')
+        st.dataframe(df.head(), use_container_width=True)
     
     # 目标选择
     st.subheader("🎯 预测目标")
@@ -1926,7 +1966,7 @@ def create_training_page():
         )
     
     # 开始训练
-    if st.button("▶ 训练模型", type="primary", width='stretch'):
+    if st.button("▶ 训练模型", type="primary", use_container_width=True):
         if not input_file:
             st.error("请先上传训练数据")
         else:
@@ -2015,7 +2055,7 @@ def create_training_page():
     if st.session_state.training_results is not None:
         st.markdown("---")
         st.subheader("📋 训练结果")
-        st.dataframe(st.session_state.training_results, width='stretch')
+        st.dataframe(st.session_state.training_results, use_container_width=True)
 
 
 # ==================== 高通量筛选 ====================
@@ -2051,7 +2091,7 @@ def create_hts_page():
             {"名称": k, "SMILES": v[:30] + "..." if len(v) > 30 else v} 
             for k, v in Config.DIANHYDRIDES.items()
         ])
-        st.dataframe(da_df, hide_index=True, width='stretch')
+        st.dataframe(da_df, hide_index=True, use_container_width=True)
         
     with col2:
         st.markdown("""
@@ -2064,7 +2104,7 @@ def create_hts_page():
             {"名称": k, "SMILES": v[:30] + "..." if len(v) > 30 else v} 
             for k, v in Config.DIAMINES.items()
         ])
-        st.dataframe(di_df, hide_index=True, width='stretch')
+        st.dataframe(di_df, hide_index=True, use_container_width=True)
     
     total = len(Config.DIANHYDRIDES) * len(Config.DIAMINES)
     
@@ -2106,7 +2146,7 @@ def create_hts_page():
         output_format = st.selectbox("输出格式", ["CSV", "Excel"])
     
     # 开始筛选
-    if st.button("🚀 开始高通量筛选", type="primary", width='stretch'):
+    if st.button("🚀 开始高通量筛选", type="primary", use_container_width=True):
         with st.spinner("高通量筛选进行中..."):
             try:
                 import random
@@ -2139,7 +2179,7 @@ def create_hts_page():
                 st.success(f"筛选完成！共 {len(results)} 种组合")
                 st.success(f"结果已保存到: {output_file}")
                 
-                st.dataframe(df, width='stretch')
+                st.dataframe(df, use_container_width=True)
                 st.session_state.hts_results = df
                 
             except Exception as e:
@@ -2166,7 +2206,7 @@ def create_hts_page():
             (filtered_df['介电常数'] <= filter_dielectric[1])
         ]
         
-        st.dataframe(filtered_df, width='stretch')
+        st.dataframe(filtered_df, use_container_width=True)
         
         csv = filtered_df.to_csv(index=False)
         st.download_button(
@@ -2264,7 +2304,7 @@ def create_settings_page():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("💾 保存配置", type="primary", width='stretch'):
+        if st.button("💾 保存配置", type="primary", use_container_width=True):
             config = {
                 'api_url': api_url,
                 'api_key': api_key,
@@ -2282,7 +2322,7 @@ def create_settings_page():
             st.success(f"配置已保存到: {config_file}")
     
     with col2:
-        if st.button("🔄 重置默认", width='stretch'):
+        if st.button("🔄 重置默认", use_container_width=True):
             st.success("配置已重置为默认值")
 
 
