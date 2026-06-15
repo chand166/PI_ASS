@@ -1413,20 +1413,14 @@ def create_scoring_page():
     part_files = sorted(parts_dir.glob("part_*.xlsx")) if parts_dir.exists() else []
 
     if part_files:
-        total_parts = len(part_files)
         import pandas as _pd
-        merged = []
-        for pf in part_files:
-            try:
-                md = _pd.read_excel(pf)
-                merged.append(md)
-            except Exception:
-                pass
-        if merged:
-            partial_df = _pd.concat(merged, ignore_index=True)
+        # 只取最后一个文件（累计快照，包含所有已评分数据）
+        last_part = part_files[-1]
+        try:
+            partial_df = _pd.read_excel(last_part)
             n = len(partial_df)
             st.markdown(f"""<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:12px;padding:16px;margin:12px 0;">
-                <b>📂 发现 {total_parts} 个临时评分文件</b> — 共 {n} 篇文献已评分，但未完成合并
+                <b>📂 发现未完成的评分结果</b> — 共 {n} 篇文献已评分，但未完成合并
             </div>""", unsafe_allow_html=True)
             c1, c2 = st.columns(2)
             with c1:
@@ -1436,13 +1430,14 @@ def create_scoring_page():
                     import shutil
                     shutil.rmtree(parts_dir)
                     st.session_state.scoring_results = partial_df
-                    st.success(f"✅ 合并完成！共 {n} 篇文献")
                     st.rerun()
             with c2:
                 if st.button("🗑 丢弃临时文件", use_container_width=True):
                     import shutil
                     shutil.rmtree(parts_dir)
                     st.rerun()
+        except Exception:
+            pass
 
     # 开始评分按钮
     if st.button("▶ 开始评分", type="primary", use_container_width=True):
