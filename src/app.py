@@ -13,6 +13,7 @@ import time
 import json
 import sys
 import os
+import threading
 
 # 将 src 目录加入 path 以便导入 i18n
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -1464,41 +1465,70 @@ def create_scoring_page():
         except Exception as e:
             st.error(f"临时文件读取失败: {e}")
 
-    # 开始评分按钮
-    if st.button("▶ 开始评分", type="primary", use_container_width=True):
-        df = st.session_state.get("scoring_df")
-        tcol = st.session_state.get("scoring_title_col")
-        if df is None:
-            st.error("请先上传文献数据文件")
-        elif not tcol:
-            st.error("请先选择/确认标题列")
-        else:
-            # 清除旧临时文件
-            if parts_dir.exists():
-                import shutil
-                shutil.rmtree(parts_dir)
-            parts_dir.mkdir(parents=True, exist_ok=True)
+    # 开始评分 / 结束评分
+    scoring_thread = st.session_state.get("scoring_thread")
+    if scoring_thread is not None and scoring_thread.is_alive():
+        # 正在评分：显示进度 + 结束按钮
+        p = st.session_state.get("scoring_progress", {})
+        st.markdown("### ⏳ 评分进行中...")
+        st.progress(p.get("pct", 0))
+        st.text(p.get("text", ""))
+        st.text(p.get("status", ""))
 
-            scoreLiterature_v2(
-                            df,
-                            st.session_state.scoring_title_col,
-                            st.session_state.scoring_abstract_col,
-                            st.session_state.scoring_doi_col,
-                            scoring_prompt, api_url, api_key,
-                            expert_count, score_threshold, max_workers,
-                            st.session_state.scoring_output_folder,
-                            st.session_state.scoring_output_filename,
-                            model_name=model_name
-                        )
+        if st.button("⏹ 结束评分", type="primary", use_container_width=True):
+            st.session_state.scoring_cancel.set()
+            scoring_thread.join(timeout=30)
+            st.session_state.scoring_thread = None
+            st.rerun()
 
+        time.sleep(2)
+        st.rerun()
 
+    else:
+        # 空闲状态：显示开始按钮
+        if st.button("▶ 开始评分", type="primary", use_container_width=True):
+            df = st.session_state.get("scoring_df")
+            tcol = st.session_state.get("scoring_title_col")
+            if df is None:
+                st.error("请先上传文献数据文件")
+            elif not tcol:
+                st.error("请先选择/确认标题列")
+            else:
+                if parts_dir.exists():
+                    import shutil
+                    shutil.rmtree(parts_dir)
+                parts_dir.mkdir(parents=True, exist_ok=True)
+
+                cancel_ev = threading.Event()
+                st.session_state.scoring_cancel = cancel_ev
+                st.session_state.scoring_results = None
+
+                def run_in_thread():
+                    scoreLiterature_v2(
+                        df,
+                        st.session_state.scoring_title_col,
+                        st.session_state.scoring_abstract_col,
+                        st.session_state.scoring_doi_col,
+                        scoring_prompt, api_url, api_key,
+                        expert_count, score_threshold, max_workers,
+                        st.session_state.scoring_output_folder,
+                        st.session_state.scoring_output_filename,
+                        model_name=model_name,
+                        cancel_event=cancel_ev
+                    )
+
+                t = threading.Thread(target=run_in_thread, daemon=True)
+                st.session_state.scoring_thread = t
+                t.start()
+                time.sleep(0.5)
+                st.rerun()
 
 def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
                       scoring_prompt, api_url, api_key,
                       expert_count, score_threshold, max_workers,
                       output_folder, output_filename,
-                      model_name=None):
-    """全局并行评分 v5：每50篇保存临时文件，完成后合并"""
+                      model_name=None, cancel_event=None):
+    """评分函数（后台线程安全版）：只更新 session_state，不直接操作 UI"""
     import requests
     import re
     import shutil
@@ -1506,166 +1536,155 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
     from collections import defaultdict
     from pathlib import Path
 
-    headers = {"Authorization": f"Bearer {api_key}"}
-    total = len(df)
-    total_tasks = total * expert_count
-    SAVE_INTERVAL = 50
-    actual_model = model_name or Config.MINIMAX_MODEL
+    try:
+        headers = {"Authorization": f"Bearer {api_key}"}
+        total = len(df)
+        total_tasks = total * expert_count
+        SAVE_INTERVAL = 50
+        actual_model = model_name or Config.MINIMAX_MODEL
 
-    papers = []
-    for _, row in df.iterrows():
-        title = str(row.get(title_col, "")) if pd.notna(row.get(title_col, "")) else ""
-        abstract = str(row.get(abstract_col, "")) if abstract_col and pd.notna(row.get(abstract_col, "")) else ""
-        doi = str(row.get(doi_col, "")) if doi_col and pd.notna(row.get(doi_col, "")) else ""
-        papers.append({"title": title, "abstract": abstract, "doi": doi})
+        papers = []
+        for _, row in df.iterrows():
+            title = str(row.get(title_col, "")) if pd.notna(row.get(title_col, "")) else ""
+            abstract = str(row.get(abstract_col, "")) if abstract_col and pd.notna(row.get(abstract_col, "")) else ""
+            doi = str(row.get(doi_col, "")) if doi_col and pd.notna(row.get(doi_col, "")) else ""
+            papers.append({"title": title, "abstract": abstract, "doi": doi})
 
-    collector = defaultdict(lambda: {"scores": [], "reasons": []})
-    done_count = 0
-    fail_count = 0
-    paper_expert_count = defaultdict(int)
+        collector = defaultdict(lambda: {"scores": [], "reasons": []})
+        done_count = 0
+        fail_count = 0
+        paper_expert_count = defaultdict(int)
 
-    progress_bar = st.progress(0)
-    progress_text = st.empty()
-    status_text = st.empty()
+        parts_dir = Path(output_folder) / ".parts"
+        parts_dir.mkdir(parents=True, exist_ok=True)
 
-    parts_dir = Path(output_folder) / ".parts"
-    parts_dir.mkdir(parents=True, exist_ok=True)
+        def update_progress():
+            pct = min(done_count / total_tasks, 1.0) if total_tasks else 0
+            st.session_state.scoring_progress = {
+                "pct": pct,
+                "text": f"文献: {len(paper_expert_count)}/{total} | API: {done_count}/{total_tasks} (失败: {fail_count})",
+                "status": f"当前文献: {papers[pi]['title'][:50]}" if pi < len(papers) else ""
+            }
 
-    def call_expert(title, abstract):
-        full_prompt = f"""请作为聚酰亚胺材料领域专家进行文献评分。
+        def call_expert(title, abstract):
+            full_prompt = f"""请作为聚酰亚胺材料领域专家进行文献评分。
 
-        {scoring_prompt}
+{scoring_prompt}
 
-        文献标题: {title}
+文献标题: {title}
 
-        文献摘要: {abstract}
+文献摘要: {abstract}
 
-        重要：请先输出最终评分，再写评分依据！
-        格式：
-        最终评分：【0.XX】
-        评分依据：...
+重要：请先输出最终评分，再写评分依据！
+格式：
+最终评分：【0.XX】
+评分依据：...
 
-        例如：
-        最终评分：【0.85】
-        评分依据：该文献研究了聚酰亚胺在显示器领域的应用，关注了热性能和机械性能，符合研究领域"""
-        payload = {
-                    "model": actual_model,
-                    "messages": [{"role": "user", "content": full_prompt}],
-                    "max_tokens": 2048,
-                    "temperature": 0.7
-                }
-        try:
-            resp = requests.post(
-                f"{api_url}/chat/completions",
-                json=payload,
-                headers=headers,
-                timeout=120
-            )
-            if resp.status_code == 200:
-                return resp.json()["choices"][0]["message"]["content"]
-        except Exception:
-            pass
-        return None
-
-    def build_results():
-        rows = []
-        for pi, paper in enumerate(papers):
-            if not paper["title"]:
-                continue
-            c = collector[pi]
-            avg = sum(c["scores"]) / len(c["scores"]) if c["scores"] else 0.0
-            basis = "; ".join(dict.fromkeys(r for r in c["reasons"] if r)) if c["reasons"] else ""
-            rows.append({
-                "标题": paper["title"][:100] if len(paper["title"]) > 100 else paper["title"],
-                "摘要": (paper["abstract"][:300] + "...") if len(paper["abstract"]) > 300 else paper["abstract"],
-                "DOI": paper["doi"],
-                "平均评分": round(avg, 4),
-                "评分依据": basis
-            })
-        return pd.DataFrame(rows)
-
-    actual_max = min(max_workers, total_tasks)
-    with ThreadPoolExecutor(max_workers=actual_max) as pool:
-        fut_to_paper = {}
-        for pi, paper in enumerate(papers):
-            if not paper["title"]:
-                continue
-            for _ in range(expert_count):
-                fut = pool.submit(call_expert, paper["title"], paper["abstract"])
-                fut_to_paper[fut] = pi
-
-        for fut in as_completed(fut_to_paper):
-            pi = fut_to_paper[fut]
+例如：
+最终评分：【0.85】
+评分依据：该文献研究了聚酰亚胺在显示器领域的应用，关注了热性能和机械性能，符合研究领域"""
+            payload = {
+                "model": actual_model,
+                "messages": [{"role": "user", "content": full_prompt}],
+                "max_tokens": 2048,
+                "temperature": 0.7
+            }
             try:
-                txt = fut.result(timeout=120)
-                if txt:
-                    m = re.search(r"【\s*([0-9.]+)\s*】", txt)
-                    if m:
-                        s = float(m.group(1))
-                        if s > 1:
-                            s /= 100
-                        collector[pi]["scores"].append(max(0.0, min(1.0, s)))
-                    rm = re.search(r"评分依据[：:]\s*(.+?)(?:最终评分|$)", txt, re.DOTALL)
-                    if rm:
-                        collector[pi]["reasons"].append(rm.group(1).strip())
-                else:
-                    fail_count += 1
+                resp = requests.post(
+                    f"{api_url}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=120
+                )
+                if resp.status_code == 200:
+                    return resp.json()["choices"][0]["message"]["content"]
             except Exception:
-                fail_count += 1
+                pass
+            return None
 
-            paper_expert_count[pi] += 1
-            done_count += 1
-            pct = min(done_count / total_tasks, 1.0)
-            progress_bar.progress(pct)
-            progress_text.text(f"文献: {len(paper_expert_count)}/{total} | API: {done_count}/{total_tasks} (失败: {fail_count})")
-            status_text.text(f"当前文献: {papers[pi]['title'][:50]}")
+        def build_results():
+            rows = []
+            for pi, paper in enumerate(papers):
+                if not paper["title"]:
+                    continue
+                c = collector[pi]
+                avg = sum(c["scores"]) / len(c["scores"]) if c["scores"] else 0.0
+                basis = "; ".join(dict.fromkeys(r for r in c["reasons"] if r)) if c["reasons"] else ""
+                rows.append({
+                    "标题": paper["title"][:100] if len(paper["title"]) > 100 else paper["title"],
+                    "摘要": (paper["abstract"][:300] + "...") if len(paper["abstract"]) > 300 else paper["abstract"],
+                    "DOI": paper["doi"],
+                    "平均评分": round(avg, 4),
+                    "评分依据": basis
+                })
+            return pd.DataFrame(rows)
 
-            # 每完成 SAVE_INTERVAL 篇，保存临时文件
-            if done_count % (SAVE_INTERVAL * expert_count) == 0:
-                part_path = parts_dir / f"part_{done_count:06d}.xlsx"
-                build_results().to_excel(part_path, index=False)
+        st.session_state.scoring_progress = {"pct": 0, "text": "准备中...", "status": ""}
+        pi = 0
+        actual_max = min(max_workers, total_tasks)
+        with ThreadPoolExecutor(max_workers=actual_max) as pool:
+            fut_to_paper = {}
+            for pi, paper in enumerate(papers):
+                if not paper["title"]:
+                    continue
+                for _ in range(expert_count):
+                    fut = pool.submit(call_expert, paper["title"], paper["abstract"])
+                    fut_to_paper[fut] = pi
 
-    # 最终保存
-    full_df = build_results()
-    output_path = Path(output_folder) / output_filename
-    full_df.to_excel(output_path, index=False)
-    st.session_state.scoring_results = full_df
+            for fut in as_completed(fut_to_paper):
+                if cancel_event and cancel_event.is_set():
+                    for f in fut_to_paper:
+                        f.cancel()
+                    break
 
-    # 删除临时文件
-    if parts_dir.exists():
-        shutil.rmtree(parts_dir)
+                pi = fut_to_paper[fut]
+                try:
+                    txt = fut.result(timeout=120)
+                    if txt:
+                        m = re.search(r"【\s*([0-9.]+)\s*】", txt)
+                        if m:
+                            s = float(m.group(1))
+                            if s > 1:
+                                s /= 100
+                            collector[pi]["scores"].append(max(0.0, min(1.0, s)))
+                        rm = re.search(r"评分依据[：:]\s*(.+?)(?:最终评分|$)", txt, re.DOTALL)
+                        if rm:
+                            collector[pi]["reasons"].append(rm.group(1).strip())
+                    else:
+                        fail_count += 1
+                except Exception:
+                    fail_count += 1
 
-    selected = full_df[full_df["平均评分"] >= score_threshold] if not full_df.empty else pd.DataFrame()
-    sel_count = len(selected)
+                paper_expert_count[pi] += 1
+                done_count += 1
+                update_progress()
 
-    st.markdown(f"""
-    <div style="
-        background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
-        border: 1px solid #6EE7B7;
-        border-radius: 16px;
-        padding: 24px;
-        margin: 24px 0;
-    ">
-        <div style="font-size: 1.2rem; font-weight: 700; color: #064E3B; margin-bottom: 8px;">
-            ✅ 评分完成
-        </div>
-        <div style="color: #047857;">结果已保存到: {output_path}</div>
-        <div style="color: #B91C1C; margin-top: 8px;">失败请求: {fail_count}/{done_count + fail_count}</div>
-    </div>
-    """, unsafe_allow_html=True)
+                if done_count % (SAVE_INTERVAL * expert_count) == 0:
+                    part_path = parts_dir / f"part_{done_count:06d}.xlsx"
+                    build_results().to_excel(part_path, index=False)
 
-    mc1, mc2, mc3 = st.columns(3)
-    mc1.metric("总文献数", len(full_df))
-    mc2.metric("入选文献", sel_count)
-    mc3.metric("入选率", f"{sel_count/len(full_df)*100:.1f}%" if not full_df.empty else "0%")
+        full_df = build_results()
+        output_path = Path(output_folder) / output_filename
+        full_df.to_excel(output_path, index=False)
+        st.session_state.scoring_results = full_df
+        st.session_state.scoring_progress = {
+            "pct": 1.0,
+            "text": f"完成！共 {len(full_df)} 篇",
+            "status": "完成"
+        }
 
-    if not full_df.empty:
-        st.dataframe(full_df, use_container_width=True)
+        if parts_dir.exists():
+            shutil.rmtree(parts_dir)
 
-    if sel_count > 0:
-        doi_path = Path(output_folder) / (Path(output_filename).stem + "_selected_dois.txt")
-        selected[["DOI"]].to_csv(doi_path, index=False, header=False)
-        st.caption(f"入选DOI列表: {doi_path}")
+        # 也保存高分DOI列表
+        selected = full_df[full_df["平均评分"] >= score_threshold] if not full_df.empty else pd.DataFrame()
+        if len(selected) > 0:
+            doi_path = Path(output_folder) / (Path(output_filename).stem + "_selected_dois.txt")
+            selected[["DOI"]].to_csv(doi_path, index=False, header=False)
+
+    except Exception as e:
+        st.session_state.scoring_progress = {"pct": 0, "text": f"错误: {e}", "status": "错误"}
+        st.session_state.scoring_results = None
 # ==================== 文献下载 ====================
 def create_download_page():
     """文献下载页面"""
