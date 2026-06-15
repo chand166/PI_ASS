@@ -1518,26 +1518,26 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
     def call_expert(title, abstract):
         full_prompt = f"""请作为聚酰亚胺材料领域专家进行文献评分。
 
-{scoring_prompt}
+        {scoring_prompt}
 
-文献标题: {title}
+        文献标题: {title}
 
-文献摘要: {abstract}
+        文献摘要: {abstract}
 
-请根据以上摘要进行分析，并给出评分。
-请严格按照以下格式输出：
-评分依据：[简要说明评分原因]
-最终评分：【0.XX】
+        重要：请先输出最终评分，再写评分依据！
+        格式：
+        最终评分：【0.XX】
+        评分依据：...
 
-例如：
-评分依据：该文献研究了聚酰亚胺在显示器领域的应用，关注了热性能和机械性能，符合研究领域
-最终评分：【0.85】"""
+        例如：
+        最终评分：【0.85】
+        评分依据：该文献研究了聚酰亚胺在显示器领域的应用，关注了热性能和机械性能，符合研究领域"""
         payload = {
-            "model": Config.MINIMAX_MODEL,
-            "messages": [{"role": "user", "content": full_prompt}],
-            "max_tokens": 300,
-            "temperature": 0.7
-        }
+                    "model": Config.MINIMAX_MODEL,
+                    "messages": [{"role": "user", "content": full_prompt}],
+                    "max_tokens": 2048,
+                    "temperature": 0.7
+                }
         try:
             resp = requests.post(
                 f"{api_url}/chat/completions",
