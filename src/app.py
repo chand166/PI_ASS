@@ -741,9 +741,9 @@ class Config:
         d.mkdir(parents=True, exist_ok=True)
     
     # API配置
-    MINIMAX_API = "http://10.2.39.6:20004/v1"
-    MINIMAX_MODEL = "minimax25"
-    DEFAULT_API_KEY = "no-key-required"
+    MINIMAX_API = "http://10.2.39.3:1025/v1"
+    MINIMAX_MODEL = "Kimi-K2.5"
+    DEFAULT_API_KEY = "EMPTY"
     
     # 默认参数
     DEFAULT_EXPERT_COUNT = 10
@@ -1396,11 +1396,13 @@ def create_scoring_page():
         scoring_prompt = st.text_area("", value=Config.DEFAULT_SCORING_PROMPT, height=150)
 
     with st.expander("🔗 API配置", expanded=False):
-        col_a1, col_a2 = st.columns(2)
-        with col_a1:
-            api_url = st.text_input("API地址", value=Config.MINIMAX_API)
-        with col_a2:
-            api_key = st.text_input("API密钥", value=Config.DEFAULT_API_KEY, type="password")
+            col_a1, col_a2, col_a3 = st.columns(3)
+            with col_a1:
+                api_url = st.text_input("API地址", value=Config.MINIMAX_API)
+            with col_a2:
+                api_key = st.text_input("API密钥", value=Config.DEFAULT_API_KEY, type="password")
+            with col_a3:
+                model_name = st.text_input("模型名称", value=Config.MINIMAX_MODEL)
 
     # === 开始评分 ===
     st.markdown("---")
@@ -1462,22 +1464,24 @@ def create_scoring_page():
             parts_dir.mkdir(parents=True, exist_ok=True)
 
             scoreLiterature_v2(
-                df,
-                st.session_state.scoring_title_col,
-                st.session_state.scoring_abstract_col,
-                st.session_state.scoring_doi_col,
-                scoring_prompt, api_url, api_key,
-                expert_count, score_threshold, max_workers,
-                st.session_state.scoring_output_folder,
-                st.session_state.scoring_output_filename
-            )
+                            df,
+                            st.session_state.scoring_title_col,
+                            st.session_state.scoring_abstract_col,
+                            st.session_state.scoring_doi_col,
+                            scoring_prompt, api_url, api_key,
+                            expert_count, score_threshold, max_workers,
+                            st.session_state.scoring_output_folder,
+                            st.session_state.scoring_output_filename,
+                            model_name=model_name
+                        )
 
 
 
 def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
                       scoring_prompt, api_url, api_key,
                       expert_count, score_threshold, max_workers,
-                      output_folder, output_filename):
+                      output_folder, output_filename,
+                      model_name=None):
     """全局并行评分 v5：每50篇保存临时文件，完成后合并"""
     import requests
     import re
@@ -1490,6 +1494,7 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
     total = len(df)
     total_tasks = total * expert_count
     SAVE_INTERVAL = 50
+    actual_model = model_name or Config.MINIMAX_MODEL
 
     papers = []
     for _, row in df.iterrows():
@@ -1528,7 +1533,7 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
         最终评分：【0.85】
         评分依据：该文献研究了聚酰亚胺在显示器领域的应用，关注了热性能和机械性能，符合研究领域"""
         payload = {
-                    "model": Config.MINIMAX_MODEL,
+                    "model": actual_model,
                     "messages": [{"role": "user", "content": full_prompt}],
                     "max_tokens": 2048,
                     "temperature": 0.7
