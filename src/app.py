@@ -335,18 +335,35 @@ st.markdown("""
     /* 输入框 - 聚焦发光 */
     .stTextInput > div > div > input,
     .stTextArea > div > div > textarea,
-    .stSelectbox > div > div > div {
+    .stSelectbox > div > div > div,
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus {
         background: rgba(255, 255, 255, 0.9) !important;
-        border: 1px solid #E2E8F0 !important;
+        border: 1.5px solid #E2E8F0 !important;
         border-radius: 12px !important;
         transition: all 0.2s;
         font-size: 0.95rem;
+        outline: none !important;
+        box-shadow: none !important;
     }
-    
+
+    /* 聚焦时仅变边框色，无多余光晕 */
     .stTextInput > div > div > input:focus,
     .stTextArea > div > div > textarea:focus {
         border-color: #4F46E5 !important;
-        box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1) !important;
+    }
+
+    /* 消除所有父级容器的多余边框/阴影 */
+    .stTextInput div, .stTextArea div,
+    .stTextInput [data-testid], .stTextArea [data-testid] {
+        outline: none !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+
+    /* 全局禁用 Streamlit 默认的焦点环 */
+    *:focus {
+        outline: none !important;
     }
     
     /* 进度条 - 渐变动画 */
