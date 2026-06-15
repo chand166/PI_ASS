@@ -1404,14 +1404,61 @@ def create_scoring_page():
 
     # === 开始评分 ===
     st.markdown("---")
+
+    # 检测临时文件（中断后残留）
+    from pathlib import Path as _P
+    out_dir = st.session_state.get("scoring_output_folder", "D:/PI_ASS/output")
+    out_name = st.session_state.get("scoring_output_filename", "scoring_results.xlsx")
+    parts_dir = _P(out_dir) / ".parts"
+    part_files = sorted(parts_dir.glob("part_*.xlsx")) if parts_dir.exists() else []
+
+    if part_files:
+        total_parts = len(part_files)
+        import pandas as _pd
+        merged = []
+        for pf in part_files:
+            try:
+                md = _pd.read_excel(pf)
+                merged.append(md)
+            except Exception:
+                pass
+        if merged:
+            partial_df = _pd.concat(merged, ignore_index=True)
+            n = len(partial_df)
+            st.markdown(f"""<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:12px;padding:16px;margin:12px 0;">
+                <b>📂 发现 {total_parts} 个临时评分文件</b> — 共 {n} 篇文献已评分，但未完成合并
+            </div>""", unsafe_allow_html=True)
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("📁 合并临时结果", type="primary", use_container_width=True):
+                    full_path = _P(out_dir) / out_name
+                    partial_df.to_excel(full_path, index=False)
+                    import shutil
+                    shutil.rmtree(parts_dir)
+                    st.session_state.scoring_results = partial_df
+                    st.success(f"✅ 合并完成！共 {n} 篇文献")
+                    st.rerun()
+            with c2:
+                if st.button("🗑 丢弃临时文件", use_container_width=True):
+                    import shutil
+                    shutil.rmtree(parts_dir)
+                    st.rerun()
+
+    # 开始评分按钮
     if st.button("▶ 开始评分", type="primary", use_container_width=True):
-        df = st.session_state.get('scoring_df')
-        tcol = st.session_state.get('scoring_title_col')
+        df = st.session_state.get("scoring_df")
+        tcol = st.session_state.get("scoring_title_col")
         if df is None:
             st.error("请先上传文献数据文件")
         elif not tcol:
             st.error("请先选择/确认标题列")
         else:
+            # 清除旧临时文件
+            if parts_dir.exists():
+                import shutil
+                shutil.rmtree(parts_dir)
+            parts_dir.mkdir(parents=True, exist_ok=True)
+
             scoreLiterature_v2(
                 df,
                 st.session_state.scoring_title_col,
@@ -1436,9 +1483,10 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
                       scoring_prompt, api_url, api_key,
                       expert_count, score_threshold, max_workers,
                       output_folder, output_filename):
-    """执行文献评分 v3：全局并行，所有文献×所有专家同时提交，大幅提速"""
+    """全局并行评分 v5：每50篇保存临时文件，完成后合并"""
     import requests
     import re
+    import shutil
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from collections import defaultdict
     from pathlib import Path
@@ -1446,8 +1494,8 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
     headers = {"Authorization": f"Bearer {api_key}"}
     total = len(df)
     total_tasks = total * expert_count
+    SAVE_INTERVAL = 50
 
-    # 预处理所有文献数据
     papers = []
     for _, row in df.iterrows():
         title = str(row.get(title_col, "")) if pd.notna(row.get(title_col, "")) else ""
@@ -1458,14 +1506,16 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
     collector = defaultdict(lambda: {"scores": [], "reasons": []})
     done_count = 0
     fail_count = 0
-    paper_expert_count = defaultdict(int)  # 每篇文献已完成的专家数
+    paper_expert_count = defaultdict(int)
 
     progress_bar = st.progress(0)
     progress_text = st.empty()
     status_text = st.empty()
 
+    parts_dir = Path(output_folder) / ".parts"
+    parts_dir.mkdir(parents=True, exist_ok=True)
+
     def call_expert(title, abstract):
-        """调用单个AI专家评分"""
         full_prompt = f"""请作为聚酰亚胺材料领域专家进行文献评分。
 
 {scoring_prompt}
@@ -1500,6 +1550,23 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
         except Exception:
             pass
         return None
+
+    def build_results():
+        rows = []
+        for pi, paper in enumerate(papers):
+            if not paper["title"]:
+                continue
+            c = collector[pi]
+            avg = sum(c["scores"]) / len(c["scores"]) if c["scores"] else 0.0
+            basis = "; ".join(dict.fromkeys(r for r in c["reasons"] if r)) if c["reasons"] else ""
+            rows.append({
+                "标题": paper["title"][:100] if len(paper["title"]) > 100 else paper["title"],
+                "摘要": (paper["abstract"][:300] + "...") if len(paper["abstract"]) > 300 else paper["abstract"],
+                "DOI": paper["doi"],
+                "平均评分": round(avg, 4),
+                "评分依据": basis
+            })
+        return pd.DataFrame(rows)
 
     actual_max = min(max_workers, total_tasks)
     with ThreadPoolExecutor(max_workers=actual_max) as pool:
@@ -1537,31 +1604,24 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
             progress_text.text(f"文献: {len(paper_expert_count)}/{total} | API: {done_count}/{total_tasks} (失败: {fail_count})")
             status_text.text(f"当前文献: {papers[pi]['title'][:50]}")
 
-    # 聚合结果
-    results = []
-    for pi, paper in enumerate(papers):
-        if not paper["title"]:
-            continue
-        c = collector[pi]
-        avg = sum(c["scores"]) / len(c["scores"]) if c["scores"] else 0.0
-        basis = "; ".join(dict.fromkeys(r for r in c["reasons"] if r)) if c["reasons"] else ""
-        results.append({
-            "标题": paper["title"][:100] if len(paper["title"]) > 100 else paper["title"],
-            "摘要": (paper["abstract"][:300] + "...") if len(paper["abstract"]) > 300 else paper["abstract"],
-            "DOI": paper["doi"],
-            "平均评分": round(avg, 4),
-            "评分依据": basis
-        })
+            # 每完成 SAVE_INTERVAL 篇，保存临时文件
+            if done_count % (SAVE_INTERVAL * expert_count) == 0:
+                part_path = parts_dir / f"part_{done_count:06d}.xlsx"
+                build_results().to_excel(part_path, index=False)
 
-    # 保存结果
-    results_df = pd.DataFrame(results)
+    # 最终保存
+    full_df = build_results()
     output_path = Path(output_folder) / output_filename
-    results_df.to_excel(output_path, index=False)
+    full_df.to_excel(output_path, index=False)
+    st.session_state.scoring_results = full_df
 
-    selected = results_df[results_df["平均评分"] >= score_threshold] if not results_df.empty else pd.DataFrame()
+    # 删除临时文件
+    if parts_dir.exists():
+        shutil.rmtree(parts_dir)
+
+    selected = full_df[full_df["平均评分"] >= score_threshold] if not full_df.empty else pd.DataFrame()
     sel_count = len(selected)
 
-    # 结果展示
     st.markdown(f"""
     <div style="
         background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
@@ -1574,25 +1634,22 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
             ✅ 评分完成
         </div>
         <div style="color: #047857;">结果已保存到: {output_path}</div>
-        <div style="color: #B91C1C; margin-top: 8px;">失败请求: {fail_count}/{total_tasks}</div>
+        <div style="color: #B91C1C; margin-top: 8px;">失败请求: {fail_count}/{done_count + fail_count}</div>
     </div>
     """, unsafe_allow_html=True)
 
     mc1, mc2, mc3 = st.columns(3)
-    mc1.metric("总文献数", len(results))
+    mc1.metric("总文献数", len(full_df))
     mc2.metric("入选文献", sel_count)
-    mc3.metric("入选率", f"{sel_count/len(results)*100:.1f}%" if results else "0%")
+    mc3.metric("入选率", f"{sel_count/len(full_df)*100:.1f}%" if not full_df.empty else "0%")
 
-    if not results_df.empty:
-        st.dataframe(results_df, use_container_width=True)
-    st.session_state.scoring_results = results_df
+    if not full_df.empty:
+        st.dataframe(full_df, use_container_width=True)
 
-    # 也保存高分DOI列表
     if sel_count > 0:
-        doi_path = output_path.with_name(output_path.stem + "_selected_dois.txt")
+        doi_path = Path(output_folder) / (Path(output_filename).stem + "_selected_dois.txt")
         selected[["DOI"]].to_csv(doi_path, index=False, header=False)
         st.caption(f"入选DOI列表: {doi_path}")
-
 # ==================== 文献下载 ====================
 def create_download_page():
     """文献下载页面"""
