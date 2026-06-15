@@ -1412,9 +1412,16 @@ def create_scoring_page():
     parts_dir = _P(out_dir) / ".parts"
     part_files = sorted(parts_dir.glob("part_*.xlsx")) if parts_dir.exists() else []
 
-    if part_files:
+    # 检查是否有合并完成的结果
+    if st.session_state.get("scoring_results") is not None:
+        st.markdown("---")
+        st.subheader("📋 评分结果")
+        st.dataframe(st.session_state.scoring_results, use_container_width=True)
+        csv_data = st.session_state.scoring_results.to_csv(index=False)
+        st.download_button("📥 下载CSV", csv_data, "scoring_results.csv", "text/csv")
+
+    elif part_files:
         import pandas as _pd
-        # 只取最后一个文件（累计快照，包含所有已评分数据）
         last_part = part_files[-1]
         try:
             partial_df = _pd.read_excel(last_part)
@@ -1436,8 +1443,8 @@ def create_scoring_page():
                     import shutil
                     shutil.rmtree(parts_dir)
                     st.rerun()
-        except Exception:
-            pass
+        except Exception as e:
+            st.error(f"临时文件读取失败: {e}")
 
     # 开始评分按钮
     if st.button("▶ 开始评分", type="primary", use_container_width=True):
@@ -1465,13 +1472,6 @@ def create_scoring_page():
                 st.session_state.scoring_output_filename
             )
 
-    # === 历史结果 ===
-    if st.session_state.scoring_results is not None:
-        st.markdown("---")
-        st.subheader("📋 评分结果")
-        st.dataframe(st.session_state.scoring_results, use_container_width=True)
-        csv_data = st.session_state.scoring_results.to_csv(index=False)
-        st.download_button("📥 下载CSV", csv_data, "scoring_results.csv", "text/csv")
 
 
 def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
