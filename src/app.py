@@ -1458,6 +1458,7 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
     collector = defaultdict(lambda: {"scores": [], "reasons": []})
     done_count = 0
     fail_count = 0
+    paper_expert_count = defaultdict(int)  # 每篇文献已完成的专家数
 
     progress_bar = st.progress(0)
     progress_text = st.empty()
@@ -1529,10 +1530,11 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
             except Exception:
                 fail_count += 1
 
+            paper_expert_count[pi] += 1
             done_count += 1
             pct = min(done_count / total_tasks, 1.0)
             progress_bar.progress(pct)
-            progress_text.text(f"进度: {done_count}/{total_tasks} (失败: {fail_count})")
+            progress_text.text(f"文献: {len(paper_expert_count)}/{total} | API: {done_count}/{total_tasks} (失败: {fail_count})")
             status_text.text(f"当前文献: {papers[pi]['title'][:50]}")
 
     # 聚合结果
