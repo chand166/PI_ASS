@@ -742,7 +742,7 @@ class Config:
     
     # API配置
     MINIMAX_API = "http://10.2.39.6:20004/v1"
-    MINIMAX_MODEL = "kimi25"
+    MINIMAX_MODEL = "minimax25"
     DEFAULT_API_KEY = "no-key-required"
     
     # 默认参数
