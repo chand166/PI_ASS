@@ -1389,8 +1389,8 @@ def create_scoring_page():
             score_threshold = st.number_input("📊 评分阈值", min_value=0.1, max_value=1.0,
                                                value=Config.DEFAULT_SCORE_THRESHOLD, step=0.1)
         with col_e3:
-            max_workers = st.number_input("⚡ 并发数", min_value=1, max_value=10, value=3,
-                                          help="同时评分多少篇文献")
+            max_workers = st.number_input("⚡ 并发数", min_value=1, max_value=25, value=8,
+                                                     help="同时评分多少篇文献（含所有专家请求）")
 
     with st.expander("📝 评分提示词", expanded=True):
         scoring_prompt = st.text_area("", value=Config.DEFAULT_SCORING_PROMPT, height=150)
@@ -1436,26 +1436,38 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
                       scoring_prompt, api_url, api_key,
                       expert_count, score_threshold, max_workers,
                       output_folder, output_filename):
-    """执行文献评分 v2：多评委并行评分 + 列名自动识别 + Excel输出"""
+    """执行文献评分 v3：全局并行，所有文献×所有专家同时提交，大幅提速"""
     import requests
     import re
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    import time
+    from collections import defaultdict
     from pathlib import Path
 
     headers = {"Authorization": f"Bearer {api_key}"}
-    results = []
     total = len(df)
+    total_tasks = total * expert_count
+
+    # 预处理所有文献数据
+    papers = []
+    for _, row in df.iterrows():
+        title = str(row.get(title_col, "")) if pd.notna(row.get(title_col, "")) else ""
+        abstract = str(row.get(abstract_col, "")) if abstract_col and pd.notna(row.get(abstract_col, "")) else ""
+        doi = str(row.get(doi_col, "")) if doi_col and pd.notna(row.get(doi_col, "")) else ""
+        papers.append({"title": title, "abstract": abstract, "doi": doi})
+
+    collector = defaultdict(lambda: {"scores": [], "reasons": []})
+    done_count = 0
+    fail_count = 0
 
     progress_bar = st.progress(0)
     progress_text = st.empty()
     status_text = st.empty()
 
-    def call_expert(title, abstract, prompt_template):
+    def call_expert(title, abstract):
         """调用单个AI专家评分"""
         full_prompt = f"""请作为聚酰亚胺材料领域专家进行文献评分。
 
-{prompt_template}
+{scoring_prompt}
 
 文献标题: {title}
 
@@ -1480,73 +1492,71 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
                 f"{api_url}/chat/completions",
                 json=payload,
                 headers=headers,
-                timeout=60
+                timeout=120
             )
             if resp.status_code == 200:
-                return resp.json()['choices'][0]['message']['content']
+                return resp.json()["choices"][0]["message"]["content"]
         except Exception:
             pass
         return None
 
-    def score_one_paper(idx, row):
-        """对单篇文献进行多专家评分"""
-        title = str(row.get(title_col, "")) if pd.notna(row.get(title_col, "")) else ""
-        abstract = str(row.get(abstract_col, "")) if abstract_col and pd.notna(row.get(abstract_col, "")) else ""
-        doi = str(row.get(doi_col, "")) if doi_col and pd.notna(row.get(doi_col, "")) else ""
-        if not title:
-            return None
+    actual_max = min(max_workers, total_tasks)
+    with ThreadPoolExecutor(max_workers=actual_max) as pool:
+        fut_to_paper = {}
+        for pi, paper in enumerate(papers):
+            if not paper["title"]:
+                continue
+            for _ in range(expert_count):
+                fut = pool.submit(call_expert, paper["title"], paper["abstract"])
+                fut_to_paper[fut] = pi
 
-        scores = []
-        reasons = []
-        pool_size = min(expert_count, max_workers)
-        with ThreadPoolExecutor(max_workers=pool_size) as pool:
-            futs = [pool.submit(call_expert, title, abstract, scoring_prompt) for _ in range(expert_count)]
-            for f in as_completed(futs):
-                try:
-                    txt = f.result(timeout=60)
-                    if not txt:
-                        continue
-                    # 解析【】中的分数
-                    m = re.search(r'【\s*([0-9.]+)\s*】', txt)
+        for fut in as_completed(fut_to_paper):
+            pi = fut_to_paper[fut]
+            try:
+                txt = fut.result(timeout=120)
+                if txt:
+                    m = re.search(r"【\s*([0-9.]+)\s*】", txt)
                     if m:
                         s = float(m.group(1))
                         if s > 1:
                             s /= 100
-                        scores.append(max(0.0, min(1.0, s)))
-                    # 解析评分依据
-                    rm = re.search(r'评分依据[：:]\s*(.+?)(?:最终评分|$)', txt, re.DOTALL)
+                        collector[pi]["scores"].append(max(0.0, min(1.0, s)))
+                    rm = re.search(r"评分依据[：:]\s*(.+?)(?:最终评分|$)", txt, re.DOTALL)
                     if rm:
-                        reasons.append(rm.group(1).strip())
-                except Exception:
-                    pass
+                        collector[pi]["reasons"].append(rm.group(1).strip())
+                else:
+                    fail_count += 1
+            except Exception:
+                fail_count += 1
 
-        avg = sum(scores) / len(scores) if scores else 0.0
-        basis = "; ".join(dict.fromkeys(r for r in reasons if r)) if reasons else ""
-        return {
-            '标题': title[:100] if len(title) > 100 else title,
-            '摘要': (abstract[:300] + "...") if len(abstract) > 300 else abstract,
-            'DOI': doi,
-            '平均评分': round(avg, 4),
-            '评分依据': basis
-        }
+            done_count += 1
+            pct = min(done_count / total_tasks, 1.0)
+            progress_bar.progress(pct)
+            progress_text.text(f"进度: {done_count}/{total_tasks} (失败: {fail_count})")
+            status_text.text(f"当前文献: {papers[pi]['title'][:50]}")
 
-    # 主循环
-    for idx, row in df.iterrows():
-        result = score_one_paper(idx, row)
-        if result:
-            results.append(result)
-        pct = (idx + 1) / total
-        progress_bar.progress(pct)
-        progress_text.text(f"进度: {idx + 1}/{total}")
-        title_preview = str(row.get(title_col, ""))[:60] if title_col else ""
-        status_text.text(f"当前: {title_preview}")
+    # 聚合结果
+    results = []
+    for pi, paper in enumerate(papers):
+        if not paper["title"]:
+            continue
+        c = collector[pi]
+        avg = sum(c["scores"]) / len(c["scores"]) if c["scores"] else 0.0
+        basis = "; ".join(dict.fromkeys(r for r in c["reasons"] if r)) if c["reasons"] else ""
+        results.append({
+            "标题": paper["title"][:100] if len(paper["title"]) > 100 else paper["title"],
+            "摘要": (paper["abstract"][:300] + "...") if len(paper["abstract"]) > 300 else paper["abstract"],
+            "DOI": paper["doi"],
+            "平均评分": round(avg, 4),
+            "评分依据": basis
+        })
 
-    # 构建结果
+    # 保存结果
     results_df = pd.DataFrame(results)
     output_path = Path(output_folder) / output_filename
     results_df.to_excel(output_path, index=False)
 
-    selected = results_df[results_df['平均评分'] >= score_threshold] if not results_df.empty else pd.DataFrame()
+    selected = results_df[results_df["平均评分"] >= score_threshold] if not results_df.empty else pd.DataFrame()
     sel_count = len(selected)
 
     # 结果展示
@@ -1562,6 +1572,7 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
             ✅ 评分完成
         </div>
         <div style="color: #047857;">结果已保存到: {output_path}</div>
+        <div style="color: #B91C1C; margin-top: 8px;">失败请求: {fail_count}/{total_tasks}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1577,9 +1588,8 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
     # 也保存高分DOI列表
     if sel_count > 0:
         doi_path = output_path.with_name(output_path.stem + "_selected_dois.txt")
-        selected[['DOI']].to_csv(doi_path, index=False, header=False)
+        selected[["DOI"]].to_csv(doi_path, index=False, header=False)
         st.caption(f"入选DOI列表: {doi_path}")
-
 
 # ==================== 文献下载 ====================
 def create_download_page():
