@@ -1431,7 +1431,7 @@ def create_scoring_page():
     parts_dir = _P(out_dir) / ".parts"
     part_files = sorted(parts_dir.glob("part_*.xlsx")) if parts_dir.exists() else []
 
-    # 检查是否有合并完成的结果
+    # 检查是否有评分结果（合并完成 或 评分完成）
     if st.session_state.get("scoring_results") is not None:
         st.markdown("---")
         st.subheader("📋 评分结果")
@@ -1439,7 +1439,7 @@ def create_scoring_page():
         csv_data = st.session_state.scoring_results.to_csv(index=False)
         st.download_button("📥 下载CSV", csv_data, "scoring_results.csv", "text/csv")
 
-    elif part_files:
+    if part_files:
         import pandas as _pd
         last_part = part_files[-1]
         try:
@@ -1456,12 +1456,11 @@ def create_scoring_page():
                     import shutil
                     shutil.rmtree(parts_dir)
                     st.session_state.scoring_results = partial_df
-                    st.rerun()
+                    # 不 rerun，直接在本轮显示
             with c2:
                 if st.button("🗑 丢弃临时文件", use_container_width=True):
                     import shutil
                     shutil.rmtree(parts_dir)
-                    st.rerun()
         except Exception as e:
             st.error(f"临时文件读取失败: {e}")
 
