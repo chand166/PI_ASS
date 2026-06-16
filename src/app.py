@@ -17,6 +17,9 @@ import threading
 
 # 将 src 目录加入 path 以便导入 i18n
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 from i18n import t, get_page_names, get_page_key
 
 # ==================== 页面配置 ====================
@@ -811,14 +814,7 @@ class Config:
 - 简要依据：为什么给这个分数"""
 
     # 数据提取提示词
-    DEFAULT_EXTRACTION_PROMPT = """从这篇聚酰亚胺论文中提取以下信息：
-1. 二酐名称和SMILES
-2. 二胺名称和SMILES  
-3. 性能数据：Tg、介电常数、透过率、拉伸强度等
-4. 合成难度评级（简单/中等/困难）
-5. 材料估算价格
-
-请以JSON格式输出。"""
+    DEFAULT_EXTRACTION_PROMPT = """以一个材料领域的专家身份，用严谨的态度来分析文献中的文字图片和表格，重点分析表格与图片，提取数据，将文件中所有的结构以及对应性能列举出来，不需要筛选，进行统计，找到缩写对应的全拼并将数据汇总为丨样品编号丨命名丨单体酸酐1英文全拼（例如4,4'-(Hexafluoroisopropylidene)diphthalic anhydride)要求不允许出现简写、括号等丨酸酐简写（例如PMDA）丨单体酸酐2英文全拼，要求不允许出现简写、括号等丨酸酐2简写（例如PMDA）丨单体二胺1英文全拼（例如4,4'-Oxydianiline）丨二胺简写（例如ODA）丨单体二胺2英文全拼（例如4,4'-Oxydianiline）丨二胺2简写（例如ODA）丨热分解温度 (Td5%, °C)丨玻璃化转变温度 (Tg, °C)丨热膨胀系数 (CTE, ppm·K⁻¹)丨截止波长 (λcutoff, nm)丨透光率 (T450nm, %)丨Tensile Strength丨Elongation at Break(%)丨a*丨b*丨L*丨Dielectric Constant丨dielectric loss丨YI丨来源文件(上传的pdf文件名不是文章题目) 这样的列标题表格中，严格控制为24列表格，将文件中所有的结构以及对应性能列举出来，无数据则用短划线表示，不允许出现缩写如（PMDA等），缩写都可以在文中找到，严格按照要求，每一格一个数据，最严格格式要求，总合在表格中，只输出表格内容，不输出思考过程，在全拼和简写单元格不允许出现中文，仔细检查确保相应列标题对应的数据与原文一致，数据自动分行，确保所有样品都被提及"""
 
 
 # ==================== 辅助函数 ====================
@@ -857,6 +853,14 @@ def init_session_state():
     if 'show_help_dialog' not in st.session_state:
         st.session_state.show_help_dialog = False
 
+
+
+@st.cache_resource
+def _get_extraction_state():
+    """持久化提取共享状态"""
+    return {"results": None, "progress": {}, "thread": None, "cancel": None}
+
+_EXTRACTION_STATE = _get_extraction_state()
 
 def check_rdkit():
     """检查RDKit是否可用"""
@@ -1797,110 +1801,89 @@ def create_download_page():
 
 # ==================== 数据提取 ====================
 def create_extraction_page():
-    """数据提取页面"""
+    """数据提取页面 - LLM提取24列表格"""
     st.title("🔬 数据提取")
-    st.markdown("<p style='color: #64748B; margin-bottom: 24px;'>从文献PDF中提取二酐-二胺结构与性能数据</p>", unsafe_allow_html=True)
-    
-    # 输入配置
+    st.markdown("<p style='color: #64748B; margin-bottom: 24px;'>从文献PDF中提取聚酰亚胺24列标准表格</p>", unsafe_allow_html=True)
+
     col1, col2 = st.columns(2)
-    
     with col1:
-        st.markdown("""
-        <div class="card" style="margin: 0;">
-            <h3 style="margin: 0 0 16px 0;">📁 文献文件夹</h3>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        pdf_folder = st.text_input("PDF文件夹路径", value=str(Config.PAPER_DIR))
-        
-        if st.button("📂 浏览文件"):
-            pdf_files = list(Path(pdf_folder).glob("*.pdf"))
-            st.info(f"找到 {len(pdf_files)} 个PDF文件")
-        
+        st.markdown("### 📁 PDF文件夹")
+        pdf_folder = st.text_input("路径", value=str(Config.PAPER_DIR), key="ext_pdf")
     with col2:
-        st.markdown("""
-        <div class="card" style="margin: 0;">
-            <h3 style="margin: 0 0 16px 0;">📤 输出配置</h3>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        output_folder = st.text_input("输出文件夹", value=str(Config.OUTPUT_DIR))
-    
-    # 提取提示词
+        st.markdown("### ⚙️ API")
+        ext_api_url = st.text_input("地址", value=Config.MINIMAX_API, key="ext_api_url")
+        ext_api_key = st.text_input("密钥", value=Config.DEFAULT_API_KEY, type="password", key="ext_api_key")
+        ext_model = st.text_input("模型", value=Config.MINIMAX_MODEL, key="ext_model")
+        ext_workers = st.slider("并发数", 1, 5, 2, key="ext_workers")
+
+    output_folder = st.text_input("输出文件夹", value=str(Config.OUTPUT_DIR), key="ext_out")
     with st.expander("📝 提取提示词", expanded=False):
-        extraction_prompt = st.text_area(
-            "数据提取提示词",
-            value=Config.DEFAULT_EXTRACTION_PROMPT,
-            height=100
-        )
-    
-    # 开始提取
-    if st.button("▶ 开始提取", type="primary", use_container_width=True):
-        if not pdf_folder or not Path(pdf_folder).exists():
-            st.error("请选择有效的文献文件夹")
-        else:
-            with st.spinner("数据提取进行中..."):
-                try:
-                    pdf_files = list(Path(pdf_folder).glob("*.pdf"))
-                    
-                    if not pdf_files:
-                        st.error("未找到PDF文件")
-                    else:
-                        st.info(f"找到 {len(pdf_files)} 个PDF文件，提取中...")
-                        
-                        import random
-                        results = []
-                        progress_bar = st.progress(0)
-                        
-                        for idx, pdf_file in enumerate(pdf_files):
-                            row = {
-                                '二酐名称': random.choice(['PMDA', 'BPDA', '6FDA', 'BTDA']),
-                                '二酐SMILES': Config.DIANHYDRIDES[random.choice(list(Config.DIANHYDRIDES.keys()))],
-                                '二胺名称': random.choice(['ODA', 'MDA', 'p-PDA']),
-                                '二胺SMILES': Config.DIAMINES[random.choice(list(Config.DIAMINES.keys()))],
-                                'Ig': random.randint(200, 400),
-                                '介电常数': round(random.uniform(2.5, 3.5), 2),
-                                '透过率': random.randint(60, 90),
-                                '拉伸强度': random.randint(50, 200),
-                                '来源文件': pdf_file.name
-                            }
-                            results.append(row)
-                            progress_bar.progress((idx + 1) / len(pdf_files))
-                        
-                        # 保存结果
-                        df = pd.DataFrame(results)
-                        output_file = Path(output_folder) / "extracted_data.xlsx"
-                        df.to_excel(output_file, index=False)
-                        
-                        # 显示结果
-                        st.markdown("""
-                        <div style="
-                            background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
-                            border: 1px solid #6EE7B7;
-                            border-radius: 16px;
-                            padding: 24px;
-                            margin: 24px 0;
-                        ">
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        st.success(f"提取完成！共 {len(results)} 条记录")
-                        st.success(f"结果已保存到: {output_file}")
-                        
-                        st.dataframe(df, use_container_width=True)
-                        st.session_state.extraction_results = df
-                        
-                except Exception as e:
-                    st.error(f"提取失败: {str(e)}")
-    
-    # 显示历史结果
-    if st.session_state.extraction_results is not None:
-        st.markdown("---")
-        st.subheader("📋 提取结果")
-        st.dataframe(st.session_state.extraction_results, use_container_width=True)
+        extraction_prompt = st.text_area("", value=Config.DEFAULT_EXTRACTION_PROMPT, height=200)
 
+    st.markdown("---")
 
-# ==================== 描述符计算 ====================
+    # === 进度 ===
+    ext_thread = _EXTRACTION_STATE.get("thread")
+    if ext_thread is not None and ext_thread.is_alive():
+        p = _EXTRACTION_STATE.get("progress", {})
+        st.markdown("### ⏳ 提取进行中...")
+        st.progress(p.get("pct", 0))
+        st.text(p.get("text", ""))
+        st.text(p.get("status", ""))
+        if st.button("⏹ 取消", type="primary", width='stretch'):
+            ev = _EXTRACTION_STATE.get("cancel")
+            if ev: ev.set()
+            st.rerun()
+        if st.button("🔄 刷新"): st.rerun()
+        time.sleep(2)
+        st.rerun()
+    else:
+        ext_res = _EXTRACTION_STATE.get("results")
+        if ext_res is not None:
+            st.subheader("📋 提取结果")
+            st.dataframe(ext_res, use_container_width=True)
+            csv_data = ext_res.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 CSV", csv_data, "extracted_data.csv", "text/csv")
+            if st.button("🗑 清除", use_container_width=True):
+                _EXTRACTION_STATE["results"] = None
+                _EXTRACTION_STATE["progress"] = {}
+                st.rerun()
+
+        if st.button("▶ 开始提取", type="primary", use_container_width=True):
+            folder = Path(pdf_folder)
+            if not folder.exists() or not list(folder.glob("*.pdf")):
+                st.error("文件夹中未找到PDF文件")
+                st.stop()
+            from modules.extraction_module import DataExtractor
+            import threading as _th
+            cancel_ev = _th.Event()
+            _EXTRACTION_STATE["cancel"] = cancel_ev
+            _EXTRACTION_STATE["results"] = None
+            _EXTRACTION_STATE["progress"] = {}
+
+            def run_ext():
+                ext = DataExtractor(api_url=ext_api_url, api_key=ext_api_key,
+                                    model=ext_model, extraction_prompt=extraction_prompt,
+                                    max_workers=ext_workers)
+                def on_prog(c, t):
+                    _EXTRACTION_STATE["progress"] = {
+                        "pct": c/t if t > 0 else 0,
+                        "text": f"提取 {c}/{t}",
+                        "status": ""}
+                out_path = Path(output_folder) / "extracted_data.xlsx"
+                df = ext.extract_from_folder(str(folder), str(out_path),
+                    progress_callback=on_prog, cancel_event=cancel_ev)
+                _EXTRACTION_STATE["results"] = df
+                _EXTRACTION_STATE["progress"] = {"pct": 1.0,
+                    "text": f"完成！共 {len(df)} 条", "status": "完成"}
+
+            t = _th.Thread(target=run_ext, daemon=True)
+            _EXTRACTION_STATE["thread"] = t
+            t.start()
+            time.sleep(0.5)
+            st.rerun()
+
+    st.info("💡 提取使用评分页的API配置")
 def create_descriptors_page():
     """描述符计算页面"""
     st.title("🧪 描述符计算")

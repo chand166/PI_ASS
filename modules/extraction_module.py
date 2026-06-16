@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 数据提取模块
-从PDF文献中提取二酐-二胺结构和性能数据
+从PDF文献中提取聚酰亚胺结构与性能数据，输出24列标准表格
 """
 
 import os
@@ -21,19 +21,24 @@ logger = logging.getLogger(__name__)
 
 class DataExtractor:
     """数据提取器"""
-    
-    def __init__(self, api_url: str, api_key: str, model: str = "minimax25",
+
+    # 24列标准输出
+    OUTPUT_COLUMNS = [
+        "样品编号", "命名",
+        "单体酸酐1英文全拼", "酸酐简写",
+        "单体酸酐2英文全拼", "酸酐2简写",
+        "单体二胺1英文全拼", "二胺简写",
+        "单体二胺2英文全拼", "二胺2简写",
+        "热分解温度 (Td5%, °C)", "玻璃化转变温度 (Tg, °C)",
+        "热膨胀系数 (CTE, ppm·K⁻¹)", "截止波长 (λcutoff, nm)",
+        "透光率 (T450nm, %)", "Tensile Strength",
+        "Elongation at Break(%)", "a*", "b*", "L*",
+        "Dielectric Constant", "dielectric loss", "YI",
+        "来源文件"
+    ]
+
+    def __init__(self, api_url: str, api_key: str, model: str = "Kimi-K2.5",
                  extraction_prompt: str = None, max_workers: int = 3):
-        """
-        初始化提取器
-        
-        Args:
-            api_url: API地址
-            api_key: API密钥
-            model: 模型名称
-            extraction_prompt: 提取提示词
-            max_workers: 最大并发数
-        """
         self.api_url = api_url
         self.api_key = api_key
         self.model = model
@@ -43,220 +48,162 @@ class DataExtractor:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
-        
-        # 输出列名
-        self.output_columns = [
-            '二酐名称', '二酐SMILES', '二胺名称', '二胺SMILES',
-            'Tg', 'Td5', 'CTE', '介电常数', '介电损耗', '击穿电压',
-            '透过率', '折射率', '拉伸强度', '断裂伸长率',
-            '合成难度', '材料价格', '来源DOI'
-        ]
-        
+
     def _default_prompt(self) -> str:
-        """默认提取提示词"""
-        return """从这篇聚酰亚胺论文中提取以下信息，请以JSON格式输出：
+        return """以一个材料领域的专家身份，用严谨的态度来分析文献中的文字图片和表格，重点分析表格与图片，提取数据，将文件中所有的结构以及对应性能列举出来"""
 
-{
-    "二酐名称": "",
-    "二酐SMILES": "",
-    "二胺名称": "",
-    "二胺SMILES": "",
-    "Tg": "",
-    "Td5": "",
-    "CTE": "",
-    "介电常数": "",
-    "介电损耗": "",
-    "击穿电压": "",
-    "透过率": "",
-    "折射率": "",
-    "拉伸强度": "",
-    "断裂伸长率": "",
-    "合成难度": "",
-    "材料价格": ""
-}
-
-请只返回JSON，不要其他内容。缺失数据用空字符串表示。"""
-        
-    def extract_from_pdf(self, pdf_path: str) -> Dict:
-        """
-        从单个PDF提取数据
-        
-        Args:
-            pdf_path: PDF文件路径
-            
-        Returns:
-            提取结果
-        """
+    def extract_text_from_pdf(self, pdf_path: str) -> str:
+        """从PDF提取文本"""
         try:
-            # 读取PDF内容（实际应该用PyMuPDF等提取文本）
-            # 这里使用简化的方式
-            with open(pdf_path, 'rb') as f:
-                pdf_content = f.read()
-                
-            # 调用API提取
-            prompt = f"""请阅读以下PDF文件内容，提取聚酰亚胺相关信息。
+            from PyPDF2 import PdfReader
+            reader = PdfReader(pdf_path)
+            text_parts = []
+            for page in reader.pages:
+                t = page.extract_text()
+                if t:
+                    text_parts.append(t)
+            return "\n".join(text_parts)
+        except Exception as e:
+            logger.error(f"PDF提取文本失败 {pdf_path}: {e}")
+            return ""
 
-{self.extraction_prompt}
+    def extract_from_pdf(self, pdf_path: str) -> Dict:
+        """从单个PDF提取数据"""
+        try:
+            pdf_text = self.extract_text_from_pdf(pdf_path)
+            pdf_name = Path(pdf_path).name
 
-PDF文件路径: {pdf_path}"""
-            
-            result = self._call_api(prompt)
-            
-            if result:
-                # 解析JSON结果
-                data = self._parse_json_result(result)
-                data['来源DOI'] = Path(pdf_path).stem
-                return data
+            if not pdf_text.strip():
+                return {col: "—" for col in self.OUTPUT_COLUMNS} | {"来源文件": pdf_name}
+
+            # 截断文本避免超长
+            if len(pdf_text) > 8000:
+                pdf_text = pdf_text[:8000] + "\n\n[文本已截断]"
+
+            prompt = f"""{self.extraction_prompt}
+
+{pdf_text}
+
+请严格按照以下24列格式输出表格，只输出表格内容不要思考过程：
+| 样品编号 | 命名 | 单体酸酐1英文全拼 | 酸酐简写 | 单体酸酐2英文全拼 | 酸酐2简写 | 单体二胺1英文全拼 | 二胺简写 | 单体二胺2英文全拼 | 二胺2简写 | 热分解温度 (Td5%, °C) | 玻璃化转变温度 (Tg, °C) | 热膨胀系数 (CTE, ppm·K⁻¹) | 截止波长 (λcutoff, nm) | 透光率 (T450nm, %) | Tensile Strength | Elongation at Break(%) | a* | b* | L* | Dielectric Constant | dielectric loss | YI | 来源文件 |
+
+要求：
+1. 将文件中所有的结构及对应性能全部列出，每个样品一行
+2. 无数据用短划线 —
+3. 全拼和简写单元格不允许出现中文
+4. 缩写可在文中找到对应全拼
+5. 来源文件列填入: {pdf_name}
+6. 严格按24列输出"""
+
+            response_text = self._call_api(prompt)
+            if response_text:
+                return self._parse_table(response_text, pdf_name)
             else:
-                return self._empty_result()
-                
+                return {col: "—" for col in self.OUTPUT_COLUMNS} | {"来源文件": pdf_name}
+
         except Exception as e:
             logger.error(f"提取失败 {pdf_path}: {e}")
-            return self._empty_result()
-            
+            return {col: "—" for col in self.OUTPUT_COLUMNS} | {"来源文件": pdf_name}
+
     def _call_api(self, prompt: str) -> Optional[str]:
         """调用API"""
-        try:
-            data = {
-                "model": self.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 2000,
-                "temperature": 0.3
-            }
-            
-            response = requests.post(
-                f"{self.api_url}/chat/completions",
-                headers=self.headers,
-                json=data,
-                timeout=120
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                return result['choices'][0]['message']['content']
-            else:
-                logger.error(f"API错误: {response.status_code}")
-                return None
-                
-        except Exception as e:
-            logger.error(f"API调用失败: {e}")
-            return None
-            
-    def _parse_json_result(self, text: str) -> Dict:
-        """解析JSON结果"""
-        # 尝试提取JSON部分
-        json_match = re.search(r'\{[\s\S]*\}', text)
-        
-        if json_match:
+        for attempt in range(3):
             try:
-                data = json.loads(json_match.group())
-                
-                # 确保所有列都存在
-                result = {}
-                for col in self.output_columns:
-                    result[col] = data.get(col, '')
-                    
-                # 估算材料价格和合成难度（基于AI返回或计算）
-                result['材料价格'] = data.get('材料价格', self._estimate_price(data))
-                result['合成难度'] = data.get('合成难度', self._estimate_difficulty(data))
-                
-                return result
-                
-            except json.JSONDecodeError:
-                logger.warning(f"JSON解析失败，使用默认值")
-                return self._empty_result()
-                
-        return self._empty_result()
-        
-    def _empty_result(self) -> Dict:
-        """空结果"""
-        return {col: '' for col in self.output_columns}
-        
-    def _estimate_price(self, data: Dict) -> str:
-        """估算材料价格"""
-        # 基于原料复杂度估算
-        dianhydride = data.get('二酐名称', '').upper()
-        diamine = data.get('二胺名称', '').upper()
-        
-        # 价格参考（仅示例）
-        price_map = {
-            '6FDA': '500-800',
-            'BTDA': '300-500',
-            'PMDA': '200-400',
-            'BPDA': '400-600',
-            'ODA': '100-200',
-            'MDA': '150-250',
-        }
-        
-        base_price = price_map.get(dianhydride, '200-400')
-        return f"{base_price} 元/克"
-        
-    def _estimate_difficulty(self, data: Dict) -> str:
-        """估算合成难度"""
-        # 基于分子复杂度
-        smiles = data.get('二酐SMILES', '') + data.get('二胺SMILES', '')
-        
-        if len(smiles) > 50:
-            return '困难'
-        elif len(smiles) > 30:
-            return '中等'
-        else:
-            return '简单'
-            
+                data = {
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 4096,
+                    "temperature": 0.1
+                }
+                response = requests.post(
+                    f"{self.api_url}/chat/completions",
+                    headers=self.headers,
+                    json=data,
+                    timeout=180
+                )
+                if response.status_code == 200:
+                    return response.json()['choices'][0]['message']['content']
+                else:
+                    logger.error(f"API错误 {response.status_code}: {response.text[:200]}")
+            except Exception as e:
+                logger.error(f"API调用失败 第{attempt+1}次: {e}")
+                time.sleep(3)
+        return None
+
+    def _parse_table(self, text: str, pdf_name: str) -> Dict:
+        """
+        解析LLM返回的表格文本为DataFrame行
+        支持markdown表格、CSV、纯文本表格
+        """
+        rows_data = []
+        lines = text.strip().split("\n")
+
+        # 尝试找markdown表格行（包含 | 分隔符的行）
+        table_lines = [l for l in lines if "|" in l and not l.strip().startswith("|--")]
+
+        if table_lines:
+            # 去掉表头行（包含"样品编号"的行）
+            data_lines = [l for l in table_lines if "样品编号" not in l and not l.startswith("|--")]
+            for line in data_lines:
+                cells = [c.strip() for c in line.strip().strip("|").split("|")]
+                row = {}
+                for i, col in enumerate(self.OUTPUT_COLUMNS):
+                    if i < len(cells):
+                        row[col] = cells[i]
+                    else:
+                        row[col] = "—"
+                # 确保来源文件
+                row["来源文件"] = pdf_name
+                rows_data.append(row)
+
+        # 如果没有解析到任何行，尝试用正则匹配数据行
+        if not rows_data:
+            row = {col: "—" for col in self.OUTPUT_COLUMNS}
+            row["来源文件"] = pdf_name
+            # 取前500字符作为原始文本参考
+            row["命名"] = text[:200].replace("\n", " ").strip()[:100]
+            rows_data.append(row)
+            return row
+
+        # 返回第一行（批量提取时每个PDF返回一行）
+        return rows_data[0]
+
     def extract_from_folder(self, folder_path: str, output_file: str,
-                          progress_callback=None) -> pd.DataFrame:
-        """
-        从文件夹批量提取
-        
-        Args:
-            folder_path: 文献文件夹路径
-            output_file: 输出Excel文件
-            progress_callback: 进度回调
-            
-        Returns:
-            结果DataFrame
-        """
+                          progress_callback=None,
+                          cancel_event=None) -> pd.DataFrame:
+        """从文件夹批量提取"""
         folder = Path(folder_path)
-        
-        # 获取所有PDF文件
-        pdf_files = list(folder.glob('*.pdf'))
-        
+        pdf_files = sorted(folder.glob("*.pdf"))
         results = []
         total = len(pdf_files)
-        
+
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = {executor.submit(self.extract_from_pdf, str(pdf)): pdf 
-                      for pdf in pdf_files}
-            
+            futures = {executor.submit(self.extract_from_pdf, str(p)): p for p in pdf_files}
             for idx, future in enumerate(as_completed(futures)):
+                if cancel_event and cancel_event.is_set():
+                    for f in futures:
+                        f.cancel()
+                    break
                 result = future.result()
                 results.append(result)
-                
                 pdf = futures[future]
                 logger.info(f"提取完成: {pdf.name}")
-                
                 if progress_callback:
                     progress_callback(idx + 1, total)
-                    
                 time.sleep(0.5)
-                
-        # 创建DataFrame
+
         df = pd.DataFrame(results)
-        
-        # 保存结果
+        # 确保24列完整
+        for col in self.OUTPUT_COLUMNS:
+            if col not in df.columns:
+                df[col] = "—"
+        df = df[self.OUTPUT_COLUMNS]
+
         df.to_excel(output_file, index=False)
-        
         logger.info(f"结果已保存到: {output_file}")
-        
         return df
 
 
-# 测试
 if __name__ == "__main__":
-    extractor = DataExtractor(
-        api_url="http://10.2.39.6:20004/v1",
-        api_key="your-api-key",
-        model="minimax25"
-    )
-    
+    e = DataExtractor(api_url="http://10.2.39.6:20004/v1", api_key="your-api-key")
     print("数据提取模块加载成功")
