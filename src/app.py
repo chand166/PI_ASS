@@ -899,6 +899,14 @@ def _get_smiles_state():
 _SMILES_STATE = _get_smiles_state()
 
 
+@st.cache_resource
+def _get_descriptor_state():
+    """持久化描述符计算共享状态"""
+    return {"results": None, "progress": {}, "thread": None, "cancel": None}
+
+_DESCRIPTOR_STATE = _get_descriptor_state()
+
+
 
 @st.cache_resource
 def _get_download_state():
@@ -2143,113 +2151,190 @@ def create_smiles_page():
 
 
 def create_descriptors_page():
-    """描述符计算页面"""
+    """描述符计算页面 - RDKit/Morgan/Mordred/PaDEL 多源"""
+    import threading as _th
+    from modules.descriptor_module import (
+        DescriptorCalculator, RDKIT_AVAILABLE, MORDRED_AVAILABLE,
+        PADEL_AVAILABLE, PADEL_LIB_AVAILABLE, JAVA_AVAILABLE,
+    )
+
     st.title("🧪 描述符计算")
-    st.markdown("<p style='color: #64748B; margin-bottom: 24px;'>计算RDKit、Morgan等多种分子描述符</p>", unsafe_allow_html=True)
-    
-    rdkit_available = check_rdkit()
-    
-    if not rdkit_available:
-        st.error("⚠️ RDKit未安装，请运行: pip install rdkit")
+    st.markdown("<p style='color: #64748B; margin-bottom: 20px;'>RDKit / Morgan / Mordred / PaDEL 多源分子描述符</p>", unsafe_allow_html=True)
+
+    # ---- 可用性徽章 ----
+    if not RDKIT_AVAILABLE:
+        st.error("⚠️ RDKit未安装，描述符计算无法运行")
         st.code("pip install rdkit")
         return
-    
-    # 输入配置
-    st.markdown("""
-    <div class="card">
-        <h3 style="margin: 0 0 16px 0;">📥 输入数据</h3>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    input_file = st.file_uploader(
-        "上传分子数据文件（CSV）",
-        type=['csv'],
-        help="需要包含SMILES列"
-    )
-    
-    if input_file:
-        df = pd.read_csv(input_file)
-        st.info(f"读取到 {len(df)} 个分子")
-        
-        smiles_col = None
-        for col in df.columns:
-            if 'smiles' in col.lower():
-                smiles_col = col
-                break
-        
-        if smiles_col:
-            st.success(f"找到SMILES列: {smiles_col}")
-            st.dataframe(df[[smiles_col]].head(), use_container_width=True)
+    badges = [("RDKit", "ok"), ("Morgan", "ok")]
+    if MORDRED_AVAILABLE: badges.append(("Mordred 1613", "ok"))
+    if PADEL_AVAILABLE: badges.append(("PaDEL", "ok"))
+    elif PADEL_LIB_AVAILABLE: badges.append(("PaDEL", "warn"))
+    bcols = st.columns(len(badges))
+    for c, (name, lv) in zip(bcols, badges):
+        icon = "✅" if lv == "ok" else "⚠️"
+        c.markdown(f"**{icon} {name}**")
+
+    if PADEL_LIB_AVAILABLE and not JAVA_AVAILABLE:
+        st.warning("⚠️ PaDEL：padelpy 已安装，但未检测到 Java 运行环境。"
+                   "在【管理员】终端执行后重启应用即可启用 PaDEL：")
+        st.code("winget install --id Microsoft.OpenJDK.17 -e", language="bash")
+
+    # ---- 数据来源 ----
+    st.markdown("#### 📥 数据来源")
+    src_df = None
+    sm_df = _SMILES_STATE.get("results")
+    use_sm = st.checkbox("使用「SMILES 转化」结果", value=(sm_df is not None),
+                         disabled=(sm_df is None), key="desc_use_sm")
+    up_file = st.file_uploader("或上传 CSV（需含 SMILES 列）",
+                               type=["csv"], key="desc_up")
+
+    if use_sm and sm_df is not None:
+        src_df = sm_df
+        st.info(f"📊 已选用 SMILES 转化结果：{len(src_df)} 行")
+    if up_file is not None:
+        try:
+            src_df = pd.read_csv(up_file)
+            st.info(f"📂 已读取上传文件：{len(src_df)} 行")
+        except Exception as e:
+            st.error(f"读取失败：{e}")
+            src_df = None
+
+    sm_col = None
+    if src_df is not None:
+        cand = [c for c in src_df.columns if 'smiles' in str(c).lower()]
+        sm_col = cand[0] if cand else None
+        if len(cand) > 1:
+            sm_col = st.selectbox("选择 SMILES 列", cand, key="desc_smcol")
+        if sm_col is None:
+            st.error("未找到 SMILES 列")
         else:
-            st.error("未找到SMILES列")
-            return
-    
-    # 计算选项
-    with st.expander("🧪 计算选项"):
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            calc_rdkit = st.checkbox("RDKit描述符", value=True)
-            
-        with col2:
-            calc_morgan = st.checkbox("Morgan指纹", value=True)
-            
-        with col3:
-            morgan_radius = st.number_input("Morgan半径", min_value=1, max_value=4, value=2)
-    
-    # 开始计算
-    if st.button("▶ 计算描述符", type="primary", use_container_width=True):
-        if not input_file:
-            st.error("请先上传分子数据文件")
-        else:
-            with st.spinner("描述符计算进行中..."):
-                try:
-                    from rdkit import Chem
-                    from rdkit.Chem import Descriptors, AllChem
-                    
-                    df = pd.read_csv(input_file)
-                    smiles_col = [c for c in df.columns if 'smiles' in c.lower()][0]
-                    
-                    results = []
-                    progress_bar = st.progress(0)
-                    
-                    for idx, smiles in enumerate(df[smiles_col]):
-                        try:
-                            mol = Chem.MolFromSmiles(smiles)
-                            if mol:
-                                row = {'SMILES': smiles}
-                                
-                                if calc_rdkit:
-                                    row['MolWt'] = Descriptors.MolWt(mol)
-                                    row['LogP'] = Descriptors.MolLogP(mol)
-                                    row['TPSA'] = Descriptors.TPSA(mol)
-                                    row['RingCount'] = Descriptors.RingCount(mol)
-                                
-                                if calc_morgan:
-                                    fp = AllChem.GetMorganFingerprintAsBitVect(mol, morgan_radius, nBits=1024)
-                                    for i, bit in enumerate(fp):
-                                        row[f'Bit_{i}'] = bit
-                                
-                                results.append(row)
-                            else:
-                                results.append({'SMILES': smiles})
-                        except:
-                            results.append({'SMILES': smiles})
-                        
-                        if (idx + 1) % 10 == 0:
-                            progress_bar.progress((idx + 1) / len(df))
-                    
-                    results_df = pd.DataFrame(results)
-                    output_file = Config.DATA_DIR / "descriptors.csv"
-                    results_df.to_csv(output_file, index=False)
-                    
-                    st.success(f"计算完成！共 {len(results)} 个分子")
-                    st.success(f"结果已保存到: {output_file}")
-                    
-                    st.dataframe(results_df, use_container_width=True)
-                    
-                except Exception as e:
-                    st.error(f"计算失败: {str(e)}")
+            st.success(f"SMILES 列：{sm_col}")
+            st.dataframe(src_df[[sm_col]].dropna().head(15), use_container_width=True)
+
+    # ---- 计算选项 ----
+    st.markdown("#### 🧪 计算选项")
+    with st.expander("描述符源与参数", expanded=True):
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            calc_rdkit = st.checkbox("RDKit 描述符", value=True, key="desc_rdkit")
+        with c2:
+            calc_morgan = st.checkbox("Morgan 指纹", value=True, key="desc_morgan")
+        with c3:
+            calc_mordred = st.checkbox("Mordred (1613)", value=True,
+                                       disabled=(not MORDRED_AVAILABLE), key="desc_mordred")
+        with c4:
+            calc_padel = st.checkbox("PaDEL", value=False,
+                                     disabled=(not PADEL_AVAILABLE), key="desc_padel")
+        p1, p2, p3 = st.columns(3)
+        with p1:
+            morgan_radius = st.number_input("Morgan 半径", 1, 4, 2, key="desc_mr")
+            morgan_bits = st.select_slider("Morgan 位数", [512, 1024, 2048, 4096], 2048, key="desc_mb")
+        with p2:
+            mordred_3d = st.checkbox("Mordred 含3D描述符", value=False, key="desc_m3d")
+        with p3:
+            padel_fp = st.checkbox("PaDEL 含 PubChem指纹", value=False,
+                                   disabled=(not PADEL_AVAILABLE), key="desc_pfp")
+            padel_to = st.number_input("PaDEL 单分子超时(秒)", 30, 600, 60, key="desc_pto")
+
+    if not any([calc_rdkit, calc_morgan, calc_mordred, calc_padel]):
+        st.warning("请至少选择一个描述符源"); st.stop()
+
+    st.markdown("---")
+
+    # ---- 后台计算（线程/进度/取消）----
+    dthread = _DESCRIPTOR_STATE.get("thread")
+    if dthread is not None and dthread.is_alive():
+        p = _DESCRIPTOR_STATE.get("progress", {})
+        st.markdown("### ⏳ 描述符计算进行中...")
+        st.progress(min(p.get("pct", 0.0), 1.0))
+        st.text(p.get("text", ""))
+        if st.button("⏹ 取消", type="primary", width='stretch'):
+            ev = _DESCRIPTOR_STATE.get("cancel")
+            if ev: ev.set()
+            _DESCRIPTOR_STATE["thread"] = None
+            _DESCRIPTOR_STATE["cancel"] = None
+            st.rerun()
+        time.sleep(2); st.rerun()
+    else:
+        dres = _DESCRIPTOR_STATE.get("results")
+        if dres:
+            st.subheader("📋 计算结果")
+            src_tabs = st.tabs(list(dres.keys()))
+            for tab, (src, ddf) in zip(src_tabs, dres.items()):
+                with tab:
+                    st.caption(f"{src}：{ddf.shape[0]} 行 × {ddf.shape[1]} 列")
+                    st.dataframe(ddf, use_container_width=True)
+                    csv = ddf.to_csv(index=False).encode("utf-8")
+                    st.download_button(f"📥 下载 {src}.csv", csv,
+                                       f"descriptors_{src}.csv", "text/csv", key=f"dl_{src}")
+            try:
+                comb = DescriptorCalculator().combine(list(dres.values()))
+                if comb is not None and not comb.empty:
+                    st.markdown("**合并预览（按 SMILES 对齐）**")
+                    st.dataframe(comb.head(), use_container_width=True)
+                    import io
+                    buf = io.BytesIO()
+                    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+                        for src, ddf in dres.items():
+                            ddf.to_excel(w, sheet_name=str(src)[:31], index=False)
+                        comb.to_excel(w, sheet_name="combined", index=False)
+                    st.download_button("📥 下载全部（Excel 多Sheet）",
+                                       buf.getvalue(), "descriptors_all.xlsx",
+                                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            except Exception as e:
+                st.warning(f"合并/导出出错：{e}")
+            if st.button("🗑 清除结果", width='stretch'):
+                _DESCRIPTOR_STATE["results"] = None
+                _DESCRIPTOR_STATE["progress"] = {}
+                st.rerun()
+
+        if st.button("▶ 开始计算", type="primary", width='stretch'):
+            if src_df is None or sm_col is None:
+                st.error("请先提供数据来源（SMILES 转化结果 或 上传 CSV）"); st.stop()
+            smiles_list = [s for s in src_df[sm_col].tolist()
+                           if s is not None and str(s).strip() and str(s).lower() != 'nan']
+            if not smiles_list:
+                st.error("SMILES 列无有效数据"); st.stop()
+            cancel_ev = _th.Event()
+            _DESCRIPTOR_STATE["cancel"] = cancel_ev
+            _DESCRIPTOR_STATE["results"] = None
+            _DESCRIPTOR_STATE["progress"] = {}
+            _opts = dict(calc_rdkit=calc_rdkit, calc_morgan=calc_morgan,
+                         calc_mordred=calc_mordred, calc_padel=calc_padel,
+                         morgan_radius=int(morgan_radius), morgan_bits=int(morgan_bits),
+                         mordred_3d=mordred_3d, padel_fp=padel_fp, padel_timeout=int(padel_to))
+
+            def _run_desc():
+                calc = DescriptorCalculator(output_dir=str(Config.DATA_DIR))
+                phases = sum([_opts['calc_rdkit'], _opts['calc_morgan'],
+                              _opts['calc_mordred'], _opts['calc_padel']]) or 1
+                phase = [0]
+                def on_prog(done, total):
+                    if total <= 0: return
+                    pct = (phase[0] + done / total) / phases
+                    _DESCRIPTOR_STATE["progress"] = {"pct": min(pct, 1.0),
+                                                     "text": f"[{phase[0]+1}/{phases}] {done}/{total}"}
+                out = {}
+                sm = smiles_list
+                if _opts['calc_rdkit']:
+                    out['rdkit'] = calc.calculate_rdkit(sm, on_prog, cancel_ev)
+                if _opts['calc_morgan']:
+                    phase[0] = 1
+                    out['morgan'] = calc.calculate_morgan(sm, _opts['morgan_radius'], _opts['morgan_bits'], on_prog, cancel_ev)
+                if _opts['calc_mordred']:
+                    phase[0] = 2
+                    out['mordred'] = calc.calculate_mordred(sm, not _opts['mordred_3d'], on_prog, cancel_ev)
+                if _opts['calc_padel']:
+                    phase[0] = 3
+                    out['padel'] = calc.calculate_padel(sm, _opts['padel_fp'], _opts['padel_timeout'], on_prog, cancel_ev)
+                _DESCRIPTOR_STATE["results"] = out
+                _DESCRIPTOR_STATE["progress"] = {"pct": 1.0,
+                                                 "text": f"完成：{ {k: v.shape[0] for k, v in out.items()} }"}
+
+            t = _th.Thread(target=_run_desc, daemon=True)
+            _DESCRIPTOR_STATE["thread"] = t
+            t.start(); time.sleep(0.5); st.rerun()
 
 
 # ==================== 模型训练 ====================
