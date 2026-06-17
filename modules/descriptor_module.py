@@ -43,16 +43,35 @@ except ImportError:
 
 
 def _java_available() -> bool:
-    """Java 运行环境检测（PaDEL-Descriptor.jar 依赖 JRE）"""
-    import shutil, subprocess
+    """检测 Java；若不在 PATH 则回退搜索常见 JDK 路径，并把 bin 加入 PATH 供 padelpy 子进程使用"""
+    import shutil, subprocess, os, glob
     java = shutil.which("java")
-    if not java:
-        return False
-    try:
-        subprocess.run([java, "-version"], capture_output=True, timeout=10)
-        return True
-    except Exception:
-        return False
+    if java:
+        try:
+            subprocess.run([java, "-version"], capture_output=True, timeout=10)
+            return True
+        except Exception:
+            pass
+    # 回退：常见 JDK 安装路径（winget/Temurin/Zulu/Adoptium 等）
+    bases = [r"C:\Program Files\Microsoft", r"C:\Program Files\Eclipse Adoptium",
+             r"C:\Program Files\Java", r"C:\Program Files (x86)\Java",
+             r"C:\Program Files\Zulu", r"C:\Program Files\Temurin"]
+    patterns = []
+    for b in bases:
+        patterns += [os.path.join(b, "jdk*", "bin", "java.exe"),
+                     os.path.join(b, "*", "bin", "java.exe")]
+    cand = []
+    for p in patterns:
+        cand += glob.glob(p)
+    for jexe in cand:
+        try:
+            subprocess.run([jexe, "-version"], capture_output=True, timeout=10)
+            os.environ["PATH"] = os.path.dirname(jexe) + os.pathsep + os.environ.get("PATH", "")
+            logger.info(f"检测到Java: {jexe}，已加入PATH")
+            return True
+        except Exception:
+            continue
+    return False
 
 
 JAVA_AVAILABLE = _java_available()
