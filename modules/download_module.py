@@ -209,6 +209,17 @@ class LiteratureDownloader:
         doi = re.sub(r'[<>:"/\\|?*]', '', doi)
         return doi[:100]
 
+    def _max_existing_index(self) -> int:
+        """扫描下载目录中已有的 N.pdf，返回最大数字（无则0）。"""
+        max_n = 0
+        try:
+            for p in self.output_dir.glob("[0-9]*.pdf"):
+                if p.stem.isdigit():
+                    max_n = max(max_n, int(p.stem))
+        except Exception:
+            pass
+        return max_n
+
     def download_batch(self, dois: List[str],
                       progress_callback=None,
                       cancel_event=None) -> Dict:
@@ -242,6 +253,32 @@ class LiteratureDownloader:
             failed_file = self.output_dir / "failed_dois.txt"
             with open(failed_file, 'w', encoding='utf-8') as f:
                 f.write('\n'.join(failed_dois))
+
+        # 下载完成后，按 dois 列表顺序把成功文件重命名为 数字.pdf（续号，失败不占号）
+        base = self._max_existing_index()
+        seq = base + 1
+        success_by_doi = {r['doi']: r for r in results if r['status'] == 'success'}
+        mapping_lines = []
+        for doi in dois:
+            r = success_by_doi.get(doi)
+            if not r or not r.get('filepath'):
+                continue
+            old_path = Path(r['filepath'])
+            if not old_path.exists():
+                continue
+            new_path = self.output_dir / f"{seq}.pdf"
+            try:
+                old_path.rename(new_path)
+                r['filepath'] = str(new_path)
+                mapping_lines.append(f"{seq}.pdf\t{doi}")
+                seq += 1
+            except Exception as e:
+                logger.error(f"重命名失败 {doi}: {e}")
+
+        if mapping_lines:
+            map_file = self.output_dir / "download_index.txt"
+            with open(map_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(mapping_lines))
 
         return {'total': total, 'success': success_count, 'failed': failed_count,
                 'failed_dois': failed_dois, 'results': results}

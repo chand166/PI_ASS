@@ -891,6 +891,14 @@ def _get_extraction_state():
 _EXTRACTION_STATE = _get_extraction_state()
 
 
+@st.cache_resource
+def _get_smiles_state():
+    """持久化SMILES转化共享状态"""
+    return {"results": None, "progress": {}, "thread": None, "cancel": None}
+
+_SMILES_STATE = _get_smiles_state()
+
+
 
 @st.cache_resource
 def _get_download_state():
@@ -1006,6 +1014,7 @@ def create_top_right_controls():
                 'nav_scoring': 'help_m_scoring',
                 'nav_download': 'help_m_download',
                 'nav_extraction': 'help_m_extraction',
+                'nav_smiles': 'help_m_smiles',
                 'nav_descriptors': 'help_m_descriptors',
                 'nav_training': 'help_m_training',
                 'nav_hts': 'help_m_hts',
@@ -1788,7 +1797,12 @@ def create_download_page():
     col_src, col_cfg = st.columns(2)
     with col_src:
         st.markdown("### 📋 来源选择")
-        scored_results = st.session_state.get("scoring_results")
+        # 评分完成在后台线程，结果只写 _SCORING_STATE["results"]（线程安全共享字典）；
+        # session_state["scoring_results"] 仅在"合并临时结果"路径（主线程）被赋值。
+        # 两个源都要查，否则正常跑完评分后下载页继承不到 DOI。
+        scored_results = _SCORING_STATE.get("results")
+        if scored_results is None:
+            scored_results = st.session_state.get("scoring_results")
         if scored_results is not None:
             st.success(f"✅ \u68c0\u6d4b\u5230\u8bc4\u5206\u7ed3\u679c\uff1a{len(scored_results)} \u7bc7\u6587\u732e\u5df2\u8bc4\u5206")
             src_option = st.radio("DOI\u6765\u6e90", ["\u8bc4\u5206\u7ed3\u679c", "\u4e0a\u4f20\u6587\u4ef6"], index=0, horizontal=True, label_visibility="collapsed")
@@ -1932,7 +1946,15 @@ def create_extraction_page():
         st.text(p.get("status", ""))
         if st.button("⏹ 取消", type="primary", width='stretch'):
             ev = _EXTRACTION_STATE.get("cancel")
-            if ev: ev.set(); st.rerun()
+            if ev: ev.set()
+            # 立即解除“进行中”状态：后台 daemon 线程会因 cancel 标志尽快 break 收尾
+            # （正在跑的 API 调用受 requests 阻塞无法强杀，会自然完成）。
+            # with-Pool 的 shutdown(wait=True) 仍要等当前并发任务跑完，所以直接清 thread 引用，
+            # 让 UI 立刻恢复可用，不再卡在进度条。已提取的部分结果会随后台收尾自动保留。
+            _EXTRACTION_STATE["thread"] = None
+            _EXTRACTION_STATE["cancel"] = None
+            _EXTRACTION_STATE["progress"] = {"pct": 0, "text": "已取消", "status": "已取消"}
+            st.rerun()
         if st.button("🔄 刷新"): st.rerun()
         time.sleep(2); st.rerun()
     else:
@@ -1968,6 +1990,157 @@ def create_extraction_page():
             _EXTRACTION_STATE["thread"] = t
             t.start(); time.sleep(0.5); st.rerun()
     st.info("💡 提取使用评分页的API配置")
+
+# ==================== SMILES 转化 ====================
+def create_smiles_page():
+    """SMILES转化页面 - LLM把单体全拼/简写转SMILES + RDKit校验"""
+    import pandas as _pd
+    from modules.smiles_module import SmilesConverter, MONOMER_COLS, rdkit_available, SMILES_PROMPT_TEMPLATE
+
+    st.title("🧬 SMILES 转化")
+    st.markdown(
+        "<p style='color: #64748B; margin-bottom: 24px;'>"
+        "将单体【英文全拼 + 简写】交给大模型转成规范 SMILES，再用 RDKit 校验结构合法性"
+        "</p>", unsafe_allow_html=True)
+
+    # RDKit 状态提示
+    if rdkit_available():
+        st.success("✅ 已加载 RDKit，将进行严格化学校验（括号闭合 / 芳香性 / 价键 / 原子数）")
+    else:
+        st.warning("⚠️ 未检测到 RDKit，仅做括号配平等的语法校验（可靠性下降，建议 pip install rdkit）")
+
+    # ---- API 配置（复用提取页配置）----
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        sm_api_url = st.text_input("API 地址", value=Config.MINIMAX_API, key="sm_api_url")
+        sm_api_key = st.text_input("API 密钥", value=Config.DEFAULT_API_KEY, type="password", key="sm_api_key")
+    with c2:
+        sm_model = st.text_input("模型", value=Config.MINIMAX_MODEL, key="sm_model")
+        sm_timeout = st.slider("超时(秒)", 30, 300, 180, key="sm_timeout")
+    with c3:
+        st.markdown("**数据来源**")
+        ext_df = _EXTRACTION_STATE.get("results")
+        use_ext = st.checkbox("使用「数据提取」结果", value=(ext_df is not None),
+                              key="sm_use_ext", disabled=(ext_df is None))
+        up_file = st.file_uploader("或上传 Excel/CSV", type=["xlsx", "xls", "csv"], key="sm_up")
+
+    with st.expander("📝 转化提示词模板", expanded=False):
+        st.code(SMILES_PROMPT_TEMPLATE, language="markdown")
+
+    # 准备输入数据
+    src_df = None
+    if use_ext and ext_df is not None:
+        src_df = ext_df
+        st.info(f"📊 已选用「数据提取」结果：{len(src_df)} 行")
+    if up_file is not None:
+        try:
+            if up_file.name.lower().endswith(".csv"):
+                src_df = _pd.read_csv(up_file)
+            else:
+                src_df = _pd.read_excel(up_file)
+            st.info(f"📂 已读取上传文件：{len(src_df)} 行")
+        except Exception as e:
+            st.error(f"读取上传文件失败：{e}")
+            src_df = None
+
+    # 预览单体相关列
+    if src_df is not None:
+        monomer_cols = [c for c, _, _, _ in MONOMER_COLS] + [c for _, c, _, _ in MONOMER_COLS]
+        monomer_cols = [c for c in monomer_cols if c in src_df.columns]
+        st.markdown("#### 输入预览（单体列）")
+        st.dataframe(src_df[monomer_cols].head(20) if monomer_cols else src_df.head(20),
+                     use_container_width=True)
+
+    st.markdown("---")
+
+    # ---- 后台转化（bg-thread + 进度/取消，与提取页同款）----
+    sm_thread = _SMILES_STATE.get("thread")
+    if sm_thread is not None and sm_thread.is_alive():
+        p = _SMILES_STATE.get("progress", {})
+        st.markdown("### ⏳ SMILES 转化进行中...")
+        st.progress(p.get("pct", 0))
+        st.text(p.get("text", ""))
+        st.text(p.get("status", ""))
+        if st.button("⏹ 取消", type="primary", width='stretch'):
+            ev = _SMILES_STATE.get("cancel")
+            if ev:
+                ev.set()
+            _SMILES_STATE["thread"] = None
+            _SMILES_STATE["cancel"] = None
+            _SMILES_STATE["progress"] = {"pct": 0, "text": "已取消", "status": "已取消"}
+            st.rerun()
+        if st.button("🔄 刷新"):
+            st.rerun()
+        time.sleep(2)
+        st.rerun()
+    else:
+        sm_res = _SMILES_STATE.get("results")
+        if sm_res is not None:
+            st.subheader("📋 转化结果")
+            st.dataframe(sm_res, use_container_width=True)
+            csv_data = sm_res.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 下载 CSV", csv_data, "smiles_converted.csv", "text/csv")
+            try:
+                import io
+                buf = io.BytesIO()
+                with _pd.ExcelWriter(buf, engine="openpyxl") as w:
+                    sm_res.to_excel(w, index=False)
+                st.download_button("📥 下载 Excel", buf.getvalue(), "smiles_converted.xlsx",
+                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            except Exception:
+                pass
+            if st.button("🗑 清除", use_container_width=True):
+                _SMILES_STATE["results"] = None
+                _SMILES_STATE["progress"] = {}
+                st.rerun()
+
+        if st.button("▶ 开始转化", type="primary", use_container_width=True):
+            if src_df is None:
+                st.error("请先选择数据来源（数据提取结果 或 上传文件）")
+                st.stop()
+            # 校验必要列
+            need = [c for c, _, _, _ in MONOMER_COLS] + [c for _, c, _, _ in MONOMER_COLS]
+            missing = [c for c in need if c not in src_df.columns]
+            if missing:
+                st.warning(f"以下单体列缺失，对应位置将留空：{missing}")
+
+            import threading as _th
+            cancel_ev = _th.Event()
+            _SMILES_STATE["cancel"] = cancel_ev
+            _SMILES_STATE["results"] = None
+            _SMILES_STATE["progress"] = {}
+            _input_df = src_df.copy()
+
+            def run_sm():
+                conv = SmilesConverter(api_url=sm_api_url, api_key=sm_api_key,
+                                       model=sm_model, timeout=sm_timeout)
+
+                def on_prog(c, t):
+                    _SMILES_STATE["progress"] = {
+                        "pct": c / t if t > 0 else 0,
+                        "text": f"转化 {c}/{t}", "status": ""}
+
+                out = conv.process_dataframe(_input_df, progress_callback=on_prog,
+                                             cancel_event=cancel_ev)
+                _SMILES_STATE["results"] = out
+                sm_cols = [t_col for _, _, t_col, _ in MONOMER_COLS]
+                nonempty = int(
+                    out[sm_cols].astype(str)
+                    .apply(lambda s: (~s.isin(["", "nan", "None"]))).sum().sum()
+                )
+                _SMILES_STATE["progress"] = {
+                    "pct": 1.0,
+                    "text": f"完成！有效 SMILES {nonempty} 个",
+                    "status": "完成"}
+
+            t = _th.Thread(target=run_sm, daemon=True)
+            _SMILES_STATE["thread"] = t
+            t.start()
+            time.sleep(0.5)
+            st.rerun()
+
+    st.info("💡 复用「数据提取」页的 API 配置；相同单体自动去重以减少调用。")
+
 
 def create_descriptors_page():
     """描述符计算页面"""
@@ -2525,6 +2698,7 @@ def create_help_page():
         ('help_m_scoring', 'nav_scoring'),
         ('help_m_download', 'nav_download'),
         ('help_m_extraction', 'nav_extraction'),
+        ('help_m_smiles', 'nav_smiles'),
         ('help_m_descriptors', 'nav_descriptors'),
         ('help_m_training', 'nav_training'),
         ('help_m_hts', 'nav_hts'),
@@ -2574,6 +2748,8 @@ def main():
         create_download_page()
     elif page_key == "nav_extraction":
         create_extraction_page()
+    elif page_key == "nav_smiles":
+        create_smiles_page()
     elif page_key == "nav_descriptors":
         create_descriptors_page()
     elif page_key == "nav_training":

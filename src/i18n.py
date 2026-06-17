@@ -55,6 +55,7 @@ TRANSLATIONS = {
     "nav_scoring": {"zh": "📚 文献评分", "en": "📚 Literature Scoring"},
     "nav_download": {"zh": "📥 文献下载", "en": "📥 Literature Download"},
     "nav_extraction": {"zh": "🔬 数据提取", "en": "🔬 Data Extraction"},
+    "nav_smiles": {"zh": "🧬 SMILES转化", "en": "🧬 SMILES Conversion"},
     "nav_descriptors": {"zh": "🧪 描述符计算", "en": "🧪 Descriptor Calculation"},
     "nav_training": {"zh": "🤖 模型训练", "en": "🤖 Model Training"},
     "nav_hts": {"zh": "🔍 高通量筛选", "en": "🔍 HTS Screening"},
@@ -245,6 +246,30 @@ Usage steps:
 4. Click "Start Extraction"
 5. Export extraction results as CSV files"""
     },
+    "help_m_smiles": {
+        "zh": """### 🧬 SMILES 转化模块
+- **功能**: 把单体【英文全拼 + 简写】交给大模型转成规范 SMILES，再用 RDKit 校验结构合法性
+- **输入**: 数据提取得到的 24 列表格（或上传 Excel/CSV）
+- **输出**: 新增 4 列单体 SMILES（酸酐1/酸酐2/二胺1/二胺2）
+
+处理规则：
+1. 逐行读取单体的【全拼 + 简写】交给 LLM，输出单一规范 SMILES
+2. 严格校验：括号闭合、芳香性、价键饱和、原子数>0（RDKit 解析）
+3. 二酐必须含两个环状酸酐基团；二胺必须含且仅含两个伯氨基
+4. 校验未通过的留空，不污染下游描述符计算
+5. 相同单体自动去重，减少 API 调用""",
+        "en": """### 🧬 SMILES Conversion Module
+- **Function**: Convert monomer [full name + abbreviation] to canonical SMILES via LLM, then validate with RDKit
+- **Input**: 24-column table from Data Extraction (or uploaded Excel/CSV)
+- **Output**: 4 new columns of monomer SMILES (dianhydride1/2, diamine1/2)
+
+Processing rules:
+1. Feed each row's monomer [full name + abbreviation] to LLM for one canonical SMILES
+2. Strict validation: balanced brackets, aromaticity, valence, atoms>0 (RDKit parsing)
+3. Dianhydrides must contain two cyclic anhydride groups; diamines exactly two primary amines
+4. Unvalidated entries left blank to avoid polluting downstream descriptors
+5. Identical monomers are deduplicated to reduce API calls"""
+    },
     "help_m_descriptors": {
         "zh": """### 🧪 描述符计算模块
 - **功能**: 基于分子 SMILES 结构计算理化描述符
@@ -385,7 +410,7 @@ def get_page_names(lang: str) -> list:
     """获取导航页面名称列表"""
     keys = [
         "nav_home", "nav_scoring", "nav_download", "nav_extraction",
-        "nav_descriptors", "nav_training", "nav_hts", "nav_settings", "nav_help"
+        "nav_smiles", "nav_descriptors", "nav_training", "nav_hts", "nav_settings", "nav_help"
     ]
     return [t(k, lang) for k in keys]
 
@@ -394,7 +419,7 @@ def get_page_key(page_name: str, lang: str) -> str:
     """根据页面显示名称返回内部 key"""
     keys = [
         "nav_home", "nav_scoring", "nav_download", "nav_extraction",
-        "nav_descriptors", "nav_training", "nav_hts", "nav_settings", "nav_help"
+        "nav_smiles", "nav_descriptors", "nav_training", "nav_hts", "nav_settings", "nav_help"
     ]
     for k in keys:
         if t(k, lang) == page_name:

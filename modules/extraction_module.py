@@ -178,19 +178,31 @@ class DataExtractor:
         total = len(pdf_files)
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = {executor.submit(self.extract_from_pdf, str(p)): p for p in pdf_files}
-            for idx, future in enumerate(as_completed(futures)):
+            future_to_pdf = {executor.submit(self.extract_from_pdf, str(p)): p for p in pdf_files}
+            pending = set(future_to_pdf)
+            completed = 0
+            while pending:
+                # 主动轮询取消：每 0.2s 检查一次，不被 as_completed 阻塞。
+                # 否则点取消后要等下一个 PDF 处理完（最坏 180s API 超时）才会响应。
                 if cancel_event and cancel_event.is_set():
-                    for f in futures:
+                    for f in pending:
                         f.cancel()
                     break
-                result = future.result()
-                results.append(result)
-                pdf = futures[future]
-                logger.info(f"提取完成: {pdf.name}")
-                if progress_callback:
-                    progress_callback(idx + 1, total)
-                time.sleep(0.5)
+                done_now = [f for f in pending if f.done()]
+                if not done_now:
+                    time.sleep(0.2)
+                    continue
+                for future in done_now:
+                    pending.discard(future)
+                    try:
+                        result = future.result()
+                        results.append(result)
+                        logger.info(f"提取完成: {future_to_pdf[future].name}")
+                    except Exception as e:
+                        logger.error(f"提取失败: {e}")
+                    completed += 1
+                    if progress_callback:
+                        progress_callback(completed, total)
 
         df = pd.DataFrame(results)
         # 确保24列完整
