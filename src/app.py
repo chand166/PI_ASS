@@ -809,15 +809,36 @@ class Config:
 4. 着重关注材料的表征与性能：光学、热性能、电性能、力学性能
 5. 排除气体传输/分离领域
 
-请给出：
-- 评分（0-1分）：文献与上述标准的相关程度
-- 简要依据：为什么给这个分数"""
+请严格按照以下格式输出最终评分和评分依据：
+最终评分：【0.XX】
+评分依据：[简要说明评分原因]"""
 
     # 数据提取提示词
     DEFAULT_EXTRACTION_PROMPT = """以一个材料领域的专家身份，用严谨的态度来分析文献中的文字图片和表格，重点分析表格与图片，提取数据，将文件中所有的结构以及对应性能列举出来，不需要筛选，进行统计，找到缩写对应的全拼并将数据汇总为丨样品编号丨命名丨单体酸酐1英文全拼（例如4,4'-(Hexafluoroisopropylidene)diphthalic anhydride)要求不允许出现简写、括号等丨酸酐简写（例如PMDA）丨单体酸酐2英文全拼，要求不允许出现简写、括号等丨酸酐2简写（例如PMDA）丨单体二胺1英文全拼（例如4,4'-Oxydianiline）丨二胺简写（例如ODA）丨单体二胺2英文全拼（例如4,4'-Oxydianiline）丨二胺2简写（例如ODA）丨热分解温度 (Td5%, °C)丨玻璃化转变温度 (Tg, °C)丨热膨胀系数 (CTE, ppm·K⁻¹)丨截止波长 (λcutoff, nm)丨透光率 (T450nm, %)丨Tensile Strength丨Elongation at Break(%)丨a*丨b*丨L*丨Dielectric Constant丨dielectric loss丨YI丨来源文件(上传的pdf文件名不是文章题目) 这样的列标题表格中，严格控制为24列表格，将文件中所有的结构以及对应性能列举出来，无数据则用短划线表示，不允许出现缩写如（PMDA等），缩写都可以在文中找到，严格按照要求，每一格一个数据，最严格格式要求，总合在表格中，只输出表格内容，不输出思考过程，在全拼和简写单元格不允许出现中文，仔细检查确保相应列标题对应的数据与原文一致，数据自动分行，确保所有样品都被提及"""
 
 
 # ==================== 辅助函数 ====================
+
+
+def _smart_read_excel(file_obj, scan_rows: int = 30):
+    """智能读取Excel，自动扫描并定位真正的表头行"""
+    _TITLE_KW = ['Title', '标题', 'Article Title', 'Article title', 'article title']
+    _ABSTRACT_KW = ['Abstract', '摘要', 'abstract']
+    raw = pd.read_excel(file_obj, header=None, nrows=scan_rows)
+    header_row = None
+    for i in range(len(raw)):
+        row_strs = [str(v).strip() for v in raw.iloc[i].tolist()]
+        has_title = any(any(k.lower() == v.lower() for k in _TITLE_KW) for v in row_strs)
+        has_abstract = any(any(k.lower() == v.lower() for k in _ABSTRACT_KW) for v in row_strs)
+        if has_title and has_abstract:
+            header_row = i
+            break
+    file_obj.seek(0)
+    if header_row is not None:
+        df = pd.read_excel(file_obj, header=header_row)
+        df = df.dropna(how='all').reset_index(drop=True)
+        return df
+    return pd.read_excel(file_obj)
 def init_session_state():
     """初始化会话状态"""
     if 'scoring_results' not in st.session_state:
@@ -838,6 +859,12 @@ def init_session_state():
         st.session_state.scoring_output_folder = str(Config.OUTPUT_DIR)
     if 'scoring_output_filename' not in st.session_state:
         st.session_state.scoring_output_filename = "scoring_results.xlsx"
+    if 'download_scored_df' not in st.session_state:
+        st.session_state.download_scored_df = None
+    if 'download_thread' not in st.session_state:
+        st.session_state.download_thread = None
+    if 'download_cancel' not in st.session_state:
+        st.session_state.download_cancel = None
     if 'extraction_results' not in st.session_state:
         st.session_state.extraction_results = None
     if 'training_results' not in st.session_state:
@@ -846,6 +873,7 @@ def init_session_state():
         st.session_state.hts_results = None
     if 'scoring_pause' not in st.session_state:
         st.session_state.scoring_pause = False
+
     if 'lang' not in st.session_state:
         st.session_state.lang = 'zh'
     if 'page' not in st.session_state:
@@ -861,6 +889,27 @@ def _get_extraction_state():
     return {"results": None, "progress": {}, "thread": None, "cancel": None}
 
 _EXTRACTION_STATE = _get_extraction_state()
+
+
+
+@st.cache_resource
+def _get_download_state():
+    return {'results': None, 'progress': {}, 'download_results': None}
+_DOWNLOAD_STATE = _get_download_state()
+
+
+@st.cache_resource
+def _get_scoring_state():
+    """持久化评分共享状态。
+    thread/cancel 必须放在这里（cache_resource 跨 rerun 持久），
+    不能用模块级全局变量——否则每次 Streamlit rerun 重新执行脚本顶层，
+    会把 _scoring_thread_ref 重置为 None，导致 UI 检测不到正在运行的线程，
+    表现为"点了开始评分没反应"。
+    """
+    return {'results': None, 'progress': {}, 'error': None,
+            'thread': None, 'cancel': None}
+
+_SCORING_STATE = _get_scoring_state()
 
 def check_rdkit():
     """检查RDKit是否可用"""
@@ -1334,7 +1383,7 @@ def create_scoring_page():
                     if input_file.name.endswith('.csv'):
                         df = pd.read_csv(input_file)
                     else:
-                        df = pd.read_excel(input_file)
+                        df = _smart_read_excel(input_file)
                 except Exception as e:
                     st.error(f"文件读取失败: {e}")
                     df = None
@@ -1437,11 +1486,11 @@ def create_scoring_page():
     part_files = sorted(parts_dir.glob("part_*.xlsx")) if parts_dir.exists() else []
 
     # 检查是否有评分结果（合并完成 或 评分完成）
-    if st.session_state.get("scoring_results") is not None:
+    if _SCORING_STATE.get("results") is not None:
         st.markdown("---")
         st.subheader("📋 评分结果")
-        st.dataframe(st.session_state.scoring_results, use_container_width=True)
-        csv_data = st.session_state.scoring_results.to_csv(index=False)
+        st.dataframe(_SCORING_STATE["results"], use_container_width=True)
+        csv_data = _SCORING_STATE["results"].to_csv(index=False)
         st.download_button("📥 下载CSV", csv_data, "scoring_results.csv", "text/csv")
 
     if part_files:
@@ -1469,28 +1518,38 @@ def create_scoring_page():
         except Exception as e:
             st.error(f"临时文件读取失败: {e}")
 
+    # 显示错误（评分失败后保留，不管线程是否存活）
+    if _SCORING_STATE.get("error"):
+        st.error(f"❌ {_SCORING_STATE['error']}")
+
     # 开始评分 / 结束评分
-    scoring_thread = st.session_state.get("scoring_thread")
+    # 线程引用从 _SCORING_STATE（cache_resource）读取，跨 rerun 持久
+    scoring_thread = _SCORING_STATE.get("thread")
     if scoring_thread is not None and scoring_thread.is_alive():
         # 正在评分：显示进度 + 结束按钮
-        p = st.session_state.get("scoring_progress", {})
+        p = _SCORING_STATE.get("progress", {})
         st.markdown("### ⏳ 评分进行中...")
         st.progress(p.get("pct", 0))
         st.text(p.get("text", ""))
         st.text(p.get("status", ""))
 
         if st.button("⏹ 结束评分", type="primary", use_container_width=True):
-            st.session_state.scoring_cancel.set()
+            _SCORING_STATE["cancel"].set()
             scoring_thread.join(timeout=30)
-            st.session_state.scoring_thread = None
+            _SCORING_STATE["thread"] = None
             st.rerun()
 
-        time.sleep(2)
+        # 短暂延迟后 rerun，让浏览器有空渲染进度
+        time.sleep(1)
         st.rerun()
 
     else:
-        # 空闲状态：显示开始按钮
-        if st.button("▶ 开始评分", type="primary", use_container_width=True):
+        # 空闲状态：开始评分按钮
+        # 注：API 仅有 Kimi-K2.5（推理模型），无法做"简单快评"，
+        # 故只保留详细评分（评分+依据）。
+        start_clicked = st.button("🚀 开始评分", type="primary", use_container_width=True,
+                                    help="AI 多评委并行评分（评分 + 评分依据）")
+        if start_clicked:
             df = st.session_state.get("scoring_df")
             tcol = st.session_state.get("scoring_title_col")
             if df is None:
@@ -1498,33 +1557,64 @@ def create_scoring_page():
             elif not tcol:
                 st.error("请先选择/确认标题列")
             else:
+                # 取消并等待可能残留的旧评分线程。
+                # 修复进度条来回跳动（26%↔30%）：多个并发线程各自维护独立 done_count，
+                # 交替覆盖 _SCORING_STATE["progress"]，导致百分比在多个值间乱跳。
+                _old_thread = _SCORING_STATE.get("thread")
+                if _old_thread is not None and _old_thread.is_alive():
+                    _old_cancel = _SCORING_STATE.get("cancel")
+                    if _old_cancel:
+                        _old_cancel.set()
+                    _old_thread.join(timeout=30)
+                    _SCORING_STATE["thread"] = None
                 if parts_dir.exists():
                     import shutil
                     shutil.rmtree(parts_dir)
                 parts_dir.mkdir(parents=True, exist_ok=True)
+                # 保险：确保输出父目录存在（修复 to_excel "non-existent directory"）
+                _P(out_dir).mkdir(parents=True, exist_ok=True)
 
                 cancel_ev = threading.Event()
-                st.session_state.scoring_cancel = cancel_ev
                 st.session_state.scoring_results = None
+                _SCORING_STATE["results"] = None
+                _SCORING_STATE["progress"] = {}
+                _SCORING_STATE["error"] = None
+                _SCORING_STATE["cancel"] = cancel_ev
+
+                # 关键：在主线程（有 ScriptRunContext）预先读取所有 session_state，
+                # 后台线程不能安全访问 st.session_state（会抛 "missing ScriptRunContext"，
+                # 导致评分线程刚启动就崩溃，表现为"点了开始评分没反应"）
+                _s_title = st.session_state.scoring_title_col
+                _s_abs = st.session_state.scoring_abstract_col
+                _s_doi = st.session_state.scoring_doi_col
+                _s_outfolder = st.session_state.scoring_output_folder
+                _s_outname = st.session_state.scoring_output_filename
 
                 def run_in_thread():
-                    scoreLiterature_v2(
-                        df,
-                        st.session_state.scoring_title_col,
-                        st.session_state.scoring_abstract_col,
-                        st.session_state.scoring_doi_col,
-                        scoring_prompt, api_url, api_key,
-                        expert_count, score_threshold, max_workers,
-                        st.session_state.scoring_output_folder,
-                        st.session_state.scoring_output_filename,
-                        model_name=model_name,
-                        cancel_event=cancel_ev
-                    )
+                    import datetime as _dt, traceback as _tb
+                    _log = lambda m: None
+                    try:
+                        with open("D:/PI_ASS/scoring_debug.log", "a", encoding="utf-8") as _f:
+                            _f.write(f"\n[{_dt.datetime.now()}] THREAD_STARTED\n")
+                        scoreLiterature_v2(
+                            df, _s_title, _s_abs, _s_doi,
+                            scoring_prompt, api_url, api_key,
+                            expert_count, score_threshold, max_workers,
+                            _s_outfolder, _s_outname,
+                            model_name=model_name,
+                            cancel_event=cancel_ev
+                        )
+                        with open("D:/PI_ASS/scoring_debug.log", "a", encoding="utf-8") as _f:
+                            _f.write(f"[{_dt.datetime.now()}] THREAD_FINISHED_OK\n")
+                    except Exception as _e:
+                        # 转义反斜杠避免 Streamlit st.error 渲染 markdown 时吃掉路径分隔符
+                        _SCORING_STATE["error"] = f"评分线程异常: {str(_e).replace(chr(92), '/')}"
+                        with open("D:/PI_ASS/scoring_debug.log", "a", encoding="utf-8") as _f:
+                            _f.write(f"[{_dt.datetime.now()}] THREAD_CRASH: {_e}\n{_tb.format_exc()}\n")
 
                 t = threading.Thread(target=run_in_thread, daemon=True)
-                st.session_state.scoring_thread = t
+                _SCORING_STATE["thread"] = t
                 t.start()
-                time.sleep(0.5)
                 st.rerun()
 
 def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
@@ -1532,13 +1622,16 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
                       expert_count, score_threshold, max_workers,
                       output_folder, output_filename,
                       model_name=None, cancel_event=None):
-    """评分函数（后台线程安全版）：只更新 session_state，不直接操作 UI"""
+    """评分函数（后台线程安全版）：写入 _SCORING_STATE 而非 st.session_state"""
     import requests
     import re
     import shutil
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from collections import defaultdict
     from pathlib import Path
+
+    def _set_progress(pct, text, status=""):
+        _SCORING_STATE["progress"] = {"pct": pct, "text": text, "status": status}
 
     try:
         headers = {"Authorization": f"Bearer {api_key}"}
@@ -1562,14 +1655,6 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
         parts_dir = Path(output_folder) / ".parts"
         parts_dir.mkdir(parents=True, exist_ok=True)
 
-        def update_progress():
-            pct = min(done_count / total_tasks, 1.0) if total_tasks else 0
-            st.session_state.scoring_progress = {
-                "pct": pct,
-                "text": f"文献: {len(paper_expert_count)}/{total} | API: {done_count}/{total_tasks} (失败: {fail_count})",
-                "status": f"当前文献: {papers[pi]['title'][:50]}" if pi < len(papers) else ""
-            }
-
         def call_expert(title, abstract):
             full_prompt = f"""请作为聚酰亚胺材料领域专家进行文献评分。
 
@@ -1587,10 +1672,11 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
 例如：
 最终评分：【0.85】
 评分依据：该文献研究了聚酰亚胺在显示器领域的应用，关注了热性能和机械性能，符合研究领域"""
+            max_tok = 1024
             payload = {
                 "model": actual_model,
                 "messages": [{"role": "user", "content": full_prompt}],
-                "max_tokens": 2048,
+                "max_tokens": max_tok,
                 "temperature": 0.7
             }
             try:
@@ -1623,7 +1709,7 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
                 })
             return pd.DataFrame(rows)
 
-        st.session_state.scoring_progress = {"pct": 0, "text": "准备中...", "status": ""}
+        _set_progress(0, "准备中...", "")
         pi = 0
         actual_max = min(max_workers, total_tasks)
         with ThreadPoolExecutor(max_workers=actual_max) as pool:
@@ -1661,150 +1747,168 @@ def scoreLiterature_v2(df, title_col, abstract_col, doi_col,
 
                 paper_expert_count[pi] += 1
                 done_count += 1
-                update_progress()
+                pct = min(done_count / total_tasks, 1.0) if total_tasks else 0
+                _set_progress(pct, f"文献: {len(paper_expert_count)}/{total} | API: {done_count}/{total_tasks} (失败: {fail_count})", f"当前文献: {papers[pi]['title'][:50]}" if pi < len(papers) else "")
 
                 if done_count % (SAVE_INTERVAL * expert_count) == 0:
+                    # 保险：多进程残留 rmtree 时序问题可能删除 .parts，这里确保存在
+                    if not parts_dir.exists():
+                        parts_dir.mkdir(parents=True, exist_ok=True)
                     part_path = parts_dir / f"part_{done_count:06d}.xlsx"
                     build_results().to_excel(part_path, index=False)
 
         full_df = build_results()
+        # 保险：确保最终输出目录存在（修复 "non-existent directory"）
+        Path(output_folder).mkdir(parents=True, exist_ok=True)
         output_path = Path(output_folder) / output_filename
         full_df.to_excel(output_path, index=False)
-        st.session_state.scoring_results = full_df
-        st.session_state.scoring_progress = {
-            "pct": 1.0,
-            "text": f"完成！共 {len(full_df)} 篇",
-            "status": "完成"
-        }
+        _SCORING_STATE["results"] = full_df
+        _set_progress(1.0, f"完成！共 {len(full_df)} 篇", "完成")
 
         if parts_dir.exists():
             shutil.rmtree(parts_dir)
 
-        # 也保存高分DOI列表
         selected = full_df[full_df["平均评分"] >= score_threshold] if not full_df.empty else pd.DataFrame()
         if len(selected) > 0:
             doi_path = Path(output_folder) / (Path(output_filename).stem + "_selected_dois.txt")
             selected[["DOI"]].to_csv(doi_path, index=False, header=False)
 
     except Exception as e:
-        st.session_state.scoring_progress = {"pct": 0, "text": f"错误: {e}", "status": "错误"}
-        st.session_state.scoring_results = None
-# ==================== 文献下载 ====================
+        import traceback
+        err_text = f"评分失败: {e}"
+        _SCORING_STATE["progress"] = {"pct": 0, "text": err_text, "status": "错误"}
+        _SCORING_STATE["results"] = None
+        _SCORING_STATE["error"] = err_text
+    # ==================== 文献下载 ====================
 def create_download_page():
-    """文献下载页面"""
+    """文献下载页面 - 评分结果批量下载PDF"""
+    lang = st.session_state.get("lang", "zh")
     st.title("📥 文献下载")
-    st.markdown("<p style='color: #64748B; margin-bottom: 24px;'>根据DOI列表批量下载学术文献PDF</p>", unsafe_allow_html=True)
-    
-    # 输入配置
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        <div class="card" style="margin: 0;">
-            <h3 style="margin: 0 0 16px 0;">📋 DOI输入</h3>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        doi_file = st.file_uploader(
-            "上传DOI文件",
-            type=['txt', 'csv', 'xlsx'],
-            help="每行一个DOI，或包含DOI列的表格",
-            label_visibility="collapsed"
-        )
-        
-    with col2:
-        st.markdown("""
-        <div class="card" style="margin: 0;">
-            <h3 style="margin: 0 0 16px 0;">📁 保存位置</h3>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        output_folder = st.text_input("下载保存文件夹", value=str(Config.PAPER_DIR))
-    
-    # 下载配置
-    with st.expander("⚙️ 下载配置"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            max_workers = st.slider("并发下载数", 1, 10, 3)
-            
-        with col2:
-            timeout = st.slider("超时时间(秒)", 10, 120, 30)
-    
-    # 开始下载
-    if st.button("▶ 开始下载", type="primary", use_container_width=True):
-        if not doi_file:
-            st.error("请先上传DOI文件")
+    st.markdown("<p style='color: #64748B; margin-bottom: 24px;'>从评分结果筛选高分文献，通过Sci-Hub批量下载PDF</p>", unsafe_allow_html=True)
+    col_src, col_cfg = st.columns(2)
+    with col_src:
+        st.markdown("### 📋 来源选择")
+        scored_results = st.session_state.get("scoring_results")
+        if scored_results is not None:
+            st.success(f"✅ \u68c0\u6d4b\u5230\u8bc4\u5206\u7ed3\u679c\uff1a{len(scored_results)} \u7bc7\u6587\u732e\u5df2\u8bc4\u5206")
+            src_option = st.radio("DOI\u6765\u6e90", ["\u8bc4\u5206\u7ed3\u679c", "\u4e0a\u4f20\u6587\u4ef6"], index=0, horizontal=True, label_visibility="collapsed")
         else:
-            with st.spinner("下载进行中..."):
+            st.info("\u24d8 \u8bf7\u5148\u5728\u300c\u6587\u732e\u8bc4\u5206\u300d\u6a21\u5757\u5b8c\u6210\u8bc4\u5206\uff0c\u6216\u4e0a\u4f20\u8bc4\u5206\u7ed3\u679c\u6587\u4ef6")
+            src_option = st.radio("DOI\u6765\u6e90", ["\u8bc4\u5206\u7ed3\u679c", "\u4e0a\u4f20\u6587\u4ef6"], index=1, horizontal=True, label_visibility="collapsed")
+        if src_option == "\u8bc4\u5206\u7ed3\u679c" and scored_results is not None:
+            st.session_state.download_scored_df = scored_results
+        elif src_option == "\u4e0a\u4f20\u6587\u4ef6":
+            uploaded = st.file_uploader("\u4e0a\u4f20\u8bc4\u5206\u7ed3\u679c\u6587\u4ef6\uff08xlsx/csv\uff09", type=["xlsx", "xls", "csv"], label_visibility="collapsed")
+            if uploaded is not None:
                 try:
-                    # 解析DOI文件
-                    if doi_file.name.endswith('.txt'):
-                        dois = doi_file.read().decode('utf-8').strip().split('\n')
-                    elif doi_file.name.endswith('.csv'):
-                        df = pd.read_csv(doi_file)
-                        dois = df['DOI'].tolist() if 'DOI' in df.columns else []
-                    else:
-                        df = pd.read_excel(doi_file)
-                        dois = df['DOI'].tolist() if 'DOI' in df.columns else []
-                    
-                    st.info(f"读取到 {len(dois)} 个DOI")
-                    
-                    # 模拟下载
-                    success_count = 0
-                    failed_dois = []
-                    
-                    progress_bar = st.progress(0)
-                    
-                    for idx, doi in enumerate(dois):
-                        import random
-                        if random.random() > 0.3:
-                            success_count += 1
-                        else:
-                            failed_dois.append(doi)
-                        
-                        progress_bar.progress((idx + 1) / len(dois))
-                    
-                    # 显示结果
-                    st.markdown("""
-                    <div style="
-                        background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
-                        border: 1px solid #6EE7B7;
-                        border-radius: 16px;
-                        padding: 24px;
-                        margin: 24px 0;
-                    ">
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("总数", len(dois))
-                    col2.metric("成功", success_count)
-                    col3.metric("失败", len(failed_dois))
-                    
-                    # 保存失败列表
-                    if failed_dois:
-                        failed_file = Path(output_folder) / "failed_dois.txt"
-                        with open(failed_file, 'w') as f:
-                            f.write('\n'.join(failed_dois))
-                        st.warning(f"失败 {len(failed_dois)} 个，已保存到: {failed_file}")
-                    
-                    st.success(f"下载完成！成功 {success_count}/{len(dois)} 个")
-                    
-                except Exception as e:
-                    st.error(f"下载失败: {str(e)}")
-    
-    # 下载说明
+                    if uploaded.name.endswith(".csv"): df = pd.read_csv(uploaded)
+                    else: df = _smart_read_excel(uploaded)
+                    st.session_state.download_scored_df = df
+                    st.success(f"\u8bfb\u53d6\u5230 {len(df)} \u6761\u8bb0\u5f55")
+                except Exception as e: st.error(f"\u6587\u4ef6\u8bfb\u53d6\u5931\u8d25: {e}")
+        elif scored_results is None and src_option == "\u8bc4\u5206\u7ed3\u679c":
+            st.warning("\u6682\u65e0\u8bc4\u5206\u7ed3\u679c\uff0c\u8bf7\u5148\u5b8c\u6210\u8bc4\u5206\u6216\u4e0a\u4f20\u6587\u4ef6")
+    with col_cfg:
+        st.markdown("### \u2699\ufe0f \u7b5b\u9009\u4e0e\u4e0b\u8f7d")
+        threshold = st.number_input("\u8bc4\u5206\u9608\u503c", min_value=0.0, max_value=1.0, value=0.7, step=0.05)
+        scihub_url = st.text_input("Sci-Hub\u955c\u50cf\u5730\u5740", value="https://sci-hub.ru")
+        output_folder = st.text_input("\u4fdd\u5b58\u6587\u4ef6\u5939", value=str(Config.PAPER_DIR))
+        with st.expander("\u5e76\u53d1\u914d\u7f6e", expanded=False):
+            col_a, col_b = st.columns(2)
+            with col_a: max_workers = st.slider("\u5e76\u53d1\u6570", 1, 10, 3)
+            with col_b: timeout = st.slider("\u8d85\u65f6(\u79d2)", 10, 120, 30)
     st.markdown("---")
-    st.info("💡 注意：由于版权原因，推荐使用Sci-Hub等学术数据库下载文献")
-
-
-# ==================== 数据提取 ====================
+    df = st.session_state.get("download_scored_df")
+    if df is not None:
+        score_col = None
+        for c in ['\u5e73\u5747\u8bc4\u5206', 'avg_score', 'score', '\u8bc4\u5206']:
+            if c in df.columns: score_col = c; break
+        doi_col = 'DOI' if 'DOI' in df.columns else ('doi' if 'doi' in df.columns else None)
+        dois = []
+        for _, row in df.iterrows():
+            score = row.get(score_col, 0) or 0 if score_col else 1.0
+            if score >= threshold:
+                doi = row.get(doi_col, '') if doi_col else ''
+                if doi and str(doi).strip(): dois.append({"doi": str(doi).strip(), "score": score})
+        seen = set()
+        unique_dois = [d for d in dois if not (d["doi"] in seen or seen.add(d["doi"]))]
+        if unique_dois:
+            st.info(f"\U0001f4ca \u8bc4\u5206>={threshold}\uff1a{len(unique_dois)} \u7bc7\u5f85\u4e0b\u8f7d")
+            st.dataframe(pd.DataFrame(unique_dois), use_container_width=True, hide_index=True)
+        elif not score_col and df is not None:
+            all_dois = []
+            dc = doi_col or 'DOI'
+            for _, row in df.iterrows():
+                doi = row.get(dc, '') if dc in df.columns else ''
+                if doi and str(doi).strip(): all_dois.append({"doi": str(doi).strip()})
+            seen2 = set()
+            unique_all = [d for d in all_dois if not (d["doi"] in seen2 or seen2.add(d["doi"]))]
+            if unique_all:
+                st.info(f"\U0001f4ca \u5171 {len(unique_all)} \u4e2aDOI\uff08\u65e0\u8bc4\u5206\u5217\uff0c\u5168\u90e8\u663e\u793a\uff09")
+                st.dataframe(pd.DataFrame(unique_all), use_container_width=True, hide_index=True)
+            else: st.warning(f"\u672a\u627e\u5230DOI\u5217\uff0c\u53ef\u7528\u7684\u5217\uff1a{list(df.columns)}")
+        else: st.warning(f"\u6ca1\u6709\u8bc4\u5206>={threshold}\u7684\u6587\u732e\uff0c\u8bf7\u964d\u4f4e\u9608\u503c\u6216\u68c0\u67e5\u8bc4\u5206\u7ed3\u679c")
+    dl_thread = st.session_state.get("download_thread")
+    if dl_thread is not None and dl_thread.is_alive():
+        p = _DOWNLOAD_STATE.get("progress", {})
+        st.markdown("### \u23f3 \u4e0b\u8f7d\u8fdb\u884c\u4e2d...")
+        st.progress(p.get("pct", 0))
+        st.text(p.get("text", ""))
+        st.text(p.get("status", ""))
+        col_b1, col_b2 = st.columns(2)
+        with col_b1:
+            if st.button("\u23f9 \u53d6\u6d88\u4e0b\u8f7d", type="primary", width='stretch'):
+                ev = st.session_state.get("download_cancel")
+                if ev: ev.set(); st.rerun()
+        with col_b2:
+            if st.button("\U0001f504 \u5237\u65b0\u8fdb\u5ea6"): st.rerun()
+        time.sleep(2); st.rerun()
+    else:
+        dl_res = _DOWNLOAD_STATE.get("download_results")
+        if dl_res is not None:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("\u603b\u6570", dl_res.get("total", 0))
+            c2.metric("\u2705 \u6210\u529f", dl_res.get("success", 0))
+            c3.metric("\u274c \u5931\u8d25", dl_res.get("failed", 0))
+            if dl_res.get("failed", 0) > 0:
+                with st.expander("\u67e5\u770b\u5931\u8d25\u7684DOI"):
+                    for d in dl_res.get("failed_dois", []): st.code(d)
+            if st.button("\U0001f5d1 \u6e05\u9664\u7ed3\u679c", use_container_width=True):
+                _DOWNLOAD_STATE["download_results"] = None; _DOWNLOAD_STATE["progress"] = {}; st.rerun()
+        if st.button("\u25b6 \u5f00\u59cb\u4e0b\u8f7d", type="primary", use_container_width=True):
+            df = st.session_state.get("download_scored_df")
+            if df is None: st.error("\u8bf7\u5148\u9009\u62e9\u8bc4\u5206\u7ed3\u679c\u6216\u4e0a\u4f20\u6587\u4ef6"); st.stop()
+            score_col = None
+            for c in ['\u5e73\u5747\u8bc4\u5206', 'avg_score', 'score', '\u8bc4\u5206']:
+                if c in df.columns: score_col = c; break
+            doi_col = 'DOI' if 'DOI' in df.columns else ('doi' if 'doi' in df.columns else None)
+            targets = []
+            for _, row in df.iterrows():
+                score = row.get(score_col, 0) or 0 if score_col else 1.0
+                if score >= threshold:
+                    doi = row.get(doi_col, '') if doi_col else ''
+                    if doi and str(doi).strip(): targets.append(str(doi).strip())
+            seen3 = set()
+            unique_targets = [d for d in targets if not (d in seen3 or seen3.add(d))]
+            if not unique_targets: st.error(f"\u6ca1\u6709\u8bc4\u5206>={threshold}\u7684\u6587\u732eDOI\uff0c\u8bf7\u964d\u4f4e\u9608\u503c"); st.stop()
+            from modules.download_module import LiteratureDownloader
+            import threading as _th
+            cancel_ev = _th.Event()
+            st.session_state.download_cancel = cancel_ev
+            _DOWNLOAD_STATE["download_results"] = None; _DOWNLOAD_STATE["progress"] = {}
+            def run_dl():
+                dl = LiteratureDownloader(output_dir=output_folder, max_workers=max_workers, timeout=timeout, scihub_url=scihub_url)
+                def on_prog(c, t): _DOWNLOAD_STATE["progress"] = {"pct": c/t if t>0 else 0, "text": f"\u4e0b\u8f7d {c}/{t}", "status": ""}
+                r = dl.download_batch(unique_targets, progress_callback=on_prog, cancel_event=cancel_ev)
+                _DOWNLOAD_STATE["download_results"] = r
+            t = _th.Thread(target=run_dl, daemon=True)
+            st.session_state.download_thread = t; t.start(); time.sleep(0.5); st.rerun()
+    st.markdown("---")
+    st.info("\u24d8 \u4e0b\u8f7d\u6e90\u9ed8\u8ba4\u4e3a Sci-Hub\uff0c\u53ef\u4fee\u6539\u4e3a\u5176\u4ed6\u955c\u50cf\u6216\u81ea\u5efa\u4ee3\u7406")# ==================== 数据提取 ====================
 def create_extraction_page():
     """数据提取页面 - LLM提取24列表格"""
     st.title("🔬 数据提取")
     st.markdown("<p style='color: #64748B; margin-bottom: 24px;'>从文献PDF中提取聚酰亚胺24列标准表格</p>", unsafe_allow_html=True)
-
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("### 📁 PDF文件夹")
@@ -1815,14 +1919,10 @@ def create_extraction_page():
         ext_api_key = st.text_input("密钥", value=Config.DEFAULT_API_KEY, type="password", key="ext_api_key")
         ext_model = st.text_input("模型", value=Config.MINIMAX_MODEL, key="ext_model")
         ext_workers = st.slider("并发数", 1, 5, 2, key="ext_workers")
-
     output_folder = st.text_input("输出文件夹", value=str(Config.OUTPUT_DIR), key="ext_out")
     with st.expander("📝 提取提示词", expanded=False):
         extraction_prompt = st.text_area("", value=Config.DEFAULT_EXTRACTION_PROMPT, height=200)
-
     st.markdown("---")
-
-    # === 进度 ===
     ext_thread = _EXTRACTION_STATE.get("thread")
     if ext_thread is not None and ext_thread.is_alive():
         p = _EXTRACTION_STATE.get("progress", {})
@@ -1832,11 +1932,9 @@ def create_extraction_page():
         st.text(p.get("status", ""))
         if st.button("⏹ 取消", type="primary", width='stretch'):
             ev = _EXTRACTION_STATE.get("cancel")
-            if ev: ev.set()
-            st.rerun()
+            if ev: ev.set(); st.rerun()
         if st.button("🔄 刷新"): st.rerun()
-        time.sleep(2)
-        st.rerun()
+        time.sleep(2); st.rerun()
     else:
         ext_res = _EXTRACTION_STATE.get("results")
         if ext_res is not None:
@@ -1848,42 +1946,29 @@ def create_extraction_page():
                 _EXTRACTION_STATE["results"] = None
                 _EXTRACTION_STATE["progress"] = {}
                 st.rerun()
-
         if st.button("▶ 开始提取", type="primary", use_container_width=True):
             folder = Path(pdf_folder)
             if not folder.exists() or not list(folder.glob("*.pdf")):
-                st.error("文件夹中未找到PDF文件")
-                st.stop()
+                st.error("文件夹中未找到PDF文件"); st.stop()
             from modules.extraction_module import DataExtractor
             import threading as _th
             cancel_ev = _th.Event()
             _EXTRACTION_STATE["cancel"] = cancel_ev
             _EXTRACTION_STATE["results"] = None
             _EXTRACTION_STATE["progress"] = {}
-
             def run_ext():
-                ext = DataExtractor(api_url=ext_api_url, api_key=ext_api_key,
-                                    model=ext_model, extraction_prompt=extraction_prompt,
-                                    max_workers=ext_workers)
+                ext = DataExtractor(api_url=ext_api_url, api_key=ext_api_key, model=ext_model, extraction_prompt=extraction_prompt, max_workers=ext_workers)
                 def on_prog(c, t):
-                    _EXTRACTION_STATE["progress"] = {
-                        "pct": c/t if t > 0 else 0,
-                        "text": f"提取 {c}/{t}",
-                        "status": ""}
+                    _EXTRACTION_STATE["progress"] = {"pct": c/t if t>0 else 0, "text": f"提取 {c}/{t}", "status": ""}
                 out_path = Path(output_folder) / "extracted_data.xlsx"
-                df = ext.extract_from_folder(str(folder), str(out_path),
-                    progress_callback=on_prog, cancel_event=cancel_ev)
+                df = ext.extract_from_folder(str(folder), str(out_path), progress_callback=on_prog, cancel_event=cancel_ev)
                 _EXTRACTION_STATE["results"] = df
-                _EXTRACTION_STATE["progress"] = {"pct": 1.0,
-                    "text": f"完成！共 {len(df)} 条", "status": "完成"}
-
+                _EXTRACTION_STATE["progress"] = {"pct": 1.0, "text": f"完成！共 {len(df)} 条", "status": "完成"}
             t = _th.Thread(target=run_ext, daemon=True)
             _EXTRACTION_STATE["thread"] = t
-            t.start()
-            time.sleep(0.5)
-            st.rerun()
-
+            t.start(); time.sleep(0.5); st.rerun()
     st.info("💡 提取使用评分页的API配置")
+
 def create_descriptors_page():
     """描述符计算页面"""
     st.title("🧪 描述符计算")

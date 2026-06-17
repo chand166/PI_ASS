@@ -50,3 +50,15 @@ models/
 # Backup files
 *backup*
 *_temp_*
+
+# Temporary fix/diagnostic scripts (local debugging, not part of app)
+fix_*.py
+diagnose_*.py
+final_fix.py
+
+# Local scaffolding / test files (not part of the app)
+new_*.py
+new_*.txt
+smart_read_fn.py
+test_*.py
+test_*.xlsx
