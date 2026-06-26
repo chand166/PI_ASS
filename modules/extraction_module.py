@@ -216,6 +216,112 @@ class DataExtractor:
         return df
 
 
+# ==================== 提取结果清洗 ====================
+# 占位符统一视为“无数据”：转成 NaN 便于后续 notna/删除
+_BLANK_TOKENS = {"", "-", "—", "–", "—", "/", "\\", "n/a", "na", "N/A", "NA",
+                 "nan", "NaN", "None", "null", "无", "未知", "未提供", "未列出",
+                 "---", "—", "—"}
+
+# 4 组单体：判断“酸酐/二胺都没有”时同时看全拼与简写
+_MONOMER_GROUPS = [
+    ("单体酸酐1英文全拼", "酸酐简写"),
+    ("单体酸酐2英文全拼", "酸酐2简写"),
+    ("单体二胺1英文全拼", "二胺简写"),
+    ("单体二胺2英文全拼", "二胺2简写"),
+]
+
+# 性能列（判断“性能全都没有”）
+_PERF_COLS = [
+    "热分解温度 (Td5%, °C)", "玻璃化转变温度 (Tg, °C)",
+    "热膨胀系数 (CTE, ppm·K⁻¹)", "截止波长 (λcutoff, nm)",
+    "透光率 (T450nm, %)", "Tensile Strength",
+    "Elongation at Break(%)", "a*", "b*", "L*",
+    "Dielectric Constant", "dielectric loss", "YI",
+]
+
+# 性能列中文 → DATA-smi 英文标准名（供 SMILES/描述符页对接时规整列名）
+PERF_COL_MAP = {
+    "热分解温度 (Td5%, °C)": "Td5%, °C",
+    "玻璃化转变温度 (Tg, °C)": "Tg, °C",
+    "热膨胀系数 (CTE, ppm·K⁻¹)": "CTE, ppm/K",
+    "截止波长 (λcutoff, nm)": "λcutoff, nm",
+    "透光率 (T450nm, %)": "T450nm, %",
+    "Tensile Strength": "Tensile Strength",
+    "Elongation at Break(%)": "Elongation at Break(%)",
+    "a*": "a*", "b*": "b*", "L*": "L*",
+    "Dielectric Constant": "Dielectric Constant",
+    "dielectric loss": "dielectric loss", "YI": "YI",
+}
+
+
+def _is_blank_val(v) -> bool:
+    if v is None:
+        return True
+    try:
+        if pd.isna(v):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return str(v).strip() in _BLANK_TOKENS
+
+
+def clean_extraction_table(df, drop_duplicates=True, renumber=True):
+    """对提取结果做自动清洗，返回 (cleaned_df, stats)。
+
+    清洗步骤（与 DATA-smi.xlsx 目标格式对齐）：
+      1. 占位符(—/-/无/未知/N/A/nan 等)归一为 NaN；
+      2. 删除“酸酐和二胺都没有”的行（4 组单体全拼+简写全空）；
+      3. 删除“性能全都没有”的行（13 个性能列全空）；
+      4. 可选删除完全重复行（保留首次出现）；
+      5. 可选重置样品编号为 1..N 连续。
+
+    stats: dict，记录每步删/改了多少行，供 UI 展示。
+    """
+    if df is None or len(df) == 0:
+        return df, {"input": 0, "output": 0, "steps": []}
+
+    stats = {"input": int(len(df)), "output": 0, "steps": []}
+    out = df.copy()
+
+    # 1) 占位符归一为 NaN（只对 object/字符串列处理，避免误伤数值）
+    for col in out.columns:
+        if out[col].dtype == object:
+            out[col] = out[col].where(~out[col].apply(_is_blank_val))
+
+    # 2) 删除“酸酐和二胺都没有”的行
+    mon_cols = [c for grp in _MONOMER_GROUPS for c in grp if c in out.columns]
+    if mon_cols:
+        all_blank = out[mon_cols].map(_is_blank_val).all(axis=1)
+        n_drop_monomer = int(all_blank.sum())
+        if n_drop_monomer > 0:
+            out = out[~all_blank].reset_index(drop=True)
+            stats["steps"].append({"rule": "删除酸酐和二胺都没有的行", "removed": n_drop_monomer})
+
+    # 3) 删除“性能全都没有”的行
+    perf_cols = [c for c in _PERF_COLS if c in out.columns]
+    if perf_cols:
+        perf_blank = out[perf_cols].map(_is_blank_val).all(axis=1)
+        n_drop_perf = int(perf_blank.sum())
+        if n_drop_perf > 0:
+            out = out[~perf_blank].reset_index(drop=True)
+            stats["steps"].append({"rule": "删除性能全都没有的行", "removed": n_drop_perf})
+
+    # 4) 删除完全重复行
+    if drop_duplicates:
+        before = len(out)
+        out = out.drop_duplicates().reset_index(drop=True)
+        n_dup = before - len(out)
+        if n_dup > 0:
+            stats["steps"].append({"rule": "删除完全重复行", "removed": n_dup})
+
+    # 5) 重置样品编号
+    if renumber and "样品编号" in out.columns:
+        out["样品编号"] = range(1, len(out) + 1)
+
+    stats["output"] = int(len(out))
+    return out, stats
+
+
 if __name__ == "__main__":
     e = DataExtractor(api_url="http://10.2.39.6:20004/v1", api_key="your-api-key")
     print("数据提取模块加载成功")

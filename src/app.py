@@ -2039,6 +2039,8 @@ def create_smiles_page():
     src_df = None
     if use_ext and ext_df is not None:
         src_df = ext_df
+        from modules.smiles_module import normalize_input_columns
+        src_df, _rename = normalize_input_columns(src_df)
         st.info(f"📊 已选用「数据提取」结果：{len(src_df)} 行")
     if up_file is not None:
         try:
@@ -2046,6 +2048,10 @@ def create_smiles_page():
                 src_df = _pd.read_csv(up_file)
             else:
                 src_df = _pd.read_excel(up_file)
+            from modules.smiles_module import normalize_input_columns
+            src_df, _rename = normalize_input_columns(src_df)
+            if _rename:
+                st.info(f"📋 列名归一化：{_rename}")
             st.info(f"📂 已读取上传文件：{len(src_df)} 行")
         except Exception as e:
             st.error(f"读取上传文件失败：{e}")
@@ -2086,8 +2092,9 @@ def create_smiles_page():
         if sm_res is not None:
             st.subheader("📋 转化结果")
             st.dataframe(sm_res, use_container_width=True)
-            csv_data = sm_res.to_csv(index=False).encode("utf-8")
-            st.download_button("📥 下载 CSV", csv_data, "smiles_converted.csv", "text/csv")
+            csv_data = sm_res.to_csv(index=False).encode("utf-8-sig")
+            st.download_button("📥 下载 CSV", csv_data, "smiles_converted.csv", "text/csv",
+                               help="UTF-8 BOM编码，Excel打开可正常显示中文")
             try:
                 import io
                 buf = io.BytesIO()
@@ -2341,91 +2348,274 @@ def create_descriptors_page():
 def create_training_page():
     """模型训练页面"""
     st.title("🤖 模型训练")
-    st.markdown("<p style='color: #64748B; margin-bottom: 24px;'>训练机器学习性能预测模型</p>", unsafe_allow_html=True)
-    
-    # 输入配置
-    st.markdown("""
-    <div class="card">
-        <h3 style="margin: 0 0 16px 0;">📥 训练数据</h3>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    input_file = st.file_uploader(
-        "上传描述符数据（CSV）",
-        type=['csv']
-    )
-    
-    if input_file:
-        df = pd.read_csv(input_file)
-        st.info(f"样本数: {len(df)}, 特征数: {df.shape[1]}")
-        st.dataframe(df.head(), use_container_width=True)
-    
-    # 目标选择
-    st.subheader("🎯 预测目标")
-    target_var = st.selectbox(
-        "选择目标变量",
-        ['tg', 'dielectric', 'transmittance', 'tensile_strength'],
-        format_func=lambda x: {
-            'tg': '玻璃化转变温度 Ig',
-            'dielectric': '介电常数',
-            'transmittance': '透过率',
-            'tensile_strength': '拉伸强度'
-        }.get(x, x)
-    )
-    
-    # 模型选择
-    st.subheader("🔧 模型选择")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        model_type = st.selectbox(
-            "选择模型",
-            ['rf', 'gb', 'lr', 'ridge'],
-            format_func=lambda x: {
-                'rf': '随机森林 (Random Forest)',
-                'gb': '梯度提升 (Gradient Boosting)',
-                'lr': '线性回归 (Linear Regression)',
-                'ridge': '岭回归 (Ridge Regression)'
-            }.get(x, x)
-        )
-    
-    with col2:
-        iterations = st.number_input(
-            "迭代次数", min_value=100, max_value=20000, 
-            value=Config.DEFAULT_ITERATIONS, step=100
-        )
-    
-    # 开始训练
-    if st.button("▶ 训练模型", type="primary", use_container_width=True):
-        if not input_file:
-            st.error("请先上传训练数据")
+    st.markdown("<p style='color: #64748B; margin-bottom: 24px;'>描述符-性能合并 → 自动生成训练数据集 → 训练模型</p>", unsafe_allow_html=True)
+
+    # ===================== 第一步：描述符-性能合并 =====================
+    st.markdown("---")
+    st.markdown("### 📦 Step 1：描述符-性能自动合并")
+    st.caption("将描述符表与性能表按 SMILES 对齐，对每组（描述符源 × 性能列）自动生成独立的训练数据文件")
+
+    merge_out_dir = Config.OUTPUT_DIR / "training_data"
+    merge_out_dir.mkdir(parents=True, exist_ok=True)
+
+    # ---- 1a. 描述符数据源 ----
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**🧪 描述符数据**")
+        desc_res = _DESCRIPTOR_STATE.get("results")
+        use_desc = st.checkbox("使用「描述符计算」结果", value=(desc_res is not None),
+                               disabled=(desc_res is None), key="train_use_desc")
+        desc_up = st.file_uploader("或上传已算好的描述符 CSV", type=["csv"], key="train_desc_up")
+
+    # ---- 1b. 性能数据源 ----
+    with c2:
+        st.markdown("**📊 性能数据**")
+        perf_up = st.file_uploader("上传性能 CSV（需含 SMILES + 性能列）",
+                                   type=["csv"], key="train_perf_up")
+
+    # ---- 收集描述符 DataFrame ----
+    desc_dfs = {}  # {source_name: DataFrame}
+    if use_desc and desc_res:
+        desc_dfs = {k: v for k, v in desc_res.items() if isinstance(v, pd.DataFrame) and not v.empty}
+    if desc_up:
+        try:
+            up_df = pd.read_csv(desc_up)
+            if 'SMILES' in up_df.columns:
+                desc_dfs["upload"] = up_df
+                st.info(f"📄 描述符上传文件：{len(up_df)} 行, {up_df.shape[1]} 列")
+        except Exception as e:
+            st.error(f"描述符 CSV 读取失败：{e}")
+
+    # ---- 读取性能表 ----
+    perf_df = None
+    if perf_up:
+        try:
+            perf_df = pd.read_csv(perf_up)
+            perf_df.columns = perf_df.columns.str.strip()
+            # 检测 SMILES 列
+            sm_candidates = [c for c in perf_df.columns if 'smiles' in str(c).lower() or c == 'SMILES']
+            perf_sm_col = sm_candidates[0] if sm_candidates else None
+            if perf_sm_col:
+                if perf_sm_col != 'SMILES':
+                    perf_df = perf_df.rename(columns={perf_sm_col: 'SMILES'})
+                st.info(f"📄 性能表：{len(perf_df)} 行, {perf_sm_col} 列名={perf_sm_col}")
+            else:
+                st.warning("性能表未找到 SMILES 列，请确保列名包含 'smiles'")
+                perf_df = None
+        except Exception as e:
+            st.error(f"性能 CSV 读取失败：{e}")
+
+    # ---- 预览 & 合并 ----
+    if desc_dfs and perf_df is not None:
+        # 性能表里所有数字列（排除 SMILES）
+        perf_num_cols = [c for c in perf_df.columns
+                         if c != 'SMILES' and pd.api.types.is_numeric_dtype(perf_df[c])]
+        # 用户选择要用的性能列
+        if not perf_num_cols:
+            st.warning("性能表中没有检测到数字列")
         else:
-            with st.spinner("模型训练进行中..."):
+            sel_perf_cols = st.multiselect(
+                "选择要合并的性能目标列",
+                perf_num_cols,
+                default=perf_num_cols[:5],
+                key="train_sel_perf"
+            )
+            if not sel_perf_cols:
+                st.info("请至少选择一个性能列")
+            else:
+                # 选择描述符源
+                desc_names = list(desc_dfs.keys())
+                sel_desc = [n for n in desc_names if n != "upload"]
+                sel_desc_names = st.multiselect(
+                    "选择要合并的描述符源",
+                    desc_names,
+                    default=sel_desc[:3],
+                    key="train_sel_desc"
+                )
+                if sel_desc_names and sel_perf_cols:
+                    # 预览匹配情况
+                    perf_smiles = set(perf_df['SMILES'].dropna().str.strip().str.lower())
+                    st.markdown("**匹配预览**")
+                    match_rows = []
+                    col_counts = {}
+                    for dn in sel_desc_names:
+                        ddf = desc_dfs[dn]
+                        ddf_sm = set(ddf['SMILES'].dropna().str.strip().str.lower())
+                        n_match = len(perf_smiles & ddf_sm)
+                        desc_only = len(ddf_sm - perf_smiles)
+                        perf_only = len(perf_smiles - ddf_sm)
+                        match_rows.append({
+                            "描述符源": dn,
+                            "描述符行数": len(ddf),
+                            "性能匹配数": n_match,
+                            "描述符独有": desc_only,
+                            "性能独有": perf_only
+                        })
+                        col_counts[dn] = len(ddf.columns)
+                    match_df = pd.DataFrame(match_rows)
+                    st.dataframe(match_df, use_container_width=True, hide_index=True)
+
+                    # 生成按钮
+                    n_files = len(sel_desc_names) * len(sel_perf_cols)
+                    if st.button(f"▶ 生成 {n_files} 个训练文件", type="primary",
+                                 use_container_width=True, key="train_merge_btn"):
+                        try:
+                            generated = []
+                            perf_lookup = perf_df[['SMILES'] + sel_perf_cols].dropna(subset=['SMILES']).copy()
+                            perf_lookup['SMILES'] = perf_lookup['SMILES'].str.strip()
+                            perf_lookup = perf_lookup.drop_duplicates(subset=['SMILES'])
+
+                            for dn in sel_desc_names:
+                                ddf = desc_dfs[dn].copy()
+                                ddf['SMILES'] = ddf['SMILES'].astype(str).str.strip()
+                                merged = ddf.merge(perf_lookup, on='SMILES', how='inner')
+                                if merged.empty:
+                                    continue
+                                for pc in sel_perf_cols:
+                                    if pc not in merged.columns:
+                                        continue
+                                    # 特征列：所有数字列（除 SMILES 和当前性能列）
+                                    feature_cols = [c for c in merged.columns
+                                                    if c not in ('SMILES', pc)
+                                                    and pd.api.types.is_numeric_dtype(merged[c])]
+                                    label_col = pc
+                                    out_df = merged[['SMILES'] + feature_cols + [label_col]].dropna(subset=[label_col]).reset_index(drop=True)
+                                    if out_df.empty:
+                                        continue
+                                    fname = f"{dn}_{pc}.csv"
+                                    fpath = merge_out_dir / fname
+                                    out_df.to_csv(fpath, index=False)
+                                    generated.append({
+                                        "文件名": fname,
+                                        "描述符源": dn,
+                                        "性能列": pc,
+                                        "特征数": len(feature_cols),
+                                        "样本数": len(out_df)
+                                    })
+
+                            if generated:
+                                gen_df = pd.DataFrame(generated)
+                                st.success(f"✅ 已生成 {len(generated)} 个训练文件到：`{merge_out_dir}`")
+                                st.dataframe(gen_df, use_container_width=True, hide_index=True)
+                                st.session_state.generated_training_files = generated
+                            else:
+                                st.warning("合并后无有效数据行，请检查 SMILES 匹配情况")
+
+                        except Exception as e:
+                            st.error(f"合并失败：{e}")
+                            import traceback
+                            traceback.print_exc()
+
+                    # 显示已生成的文件列表
+                    if st.session_state.get("generated_training_files"):
+                        st.markdown("**📁 已生成文件列表**")
+                        gdf = pd.DataFrame(st.session_state.generated_training_files)
+                        st.dataframe(gdf, use_container_width=True, hide_index=True)
+
+    elif not desc_dfs:
+        st.info("👆 请先在「描述符计算」页面算好描述符，或上传描述符 CSV")
+    elif perf_df is None:
+        st.info("👆 请上传性能数据 CSV（需含 SMILES 列和性能目标列）")
+
+    # ===================== 第二步：模型训练 =====================
+    st.markdown("---")
+    st.markdown("### 🧠 Step 2：模型训练")
+    st.caption("从已生成的文件中选择一个训练数据集，或上传自定义 CSV 直接训练")
+
+    # ---- 从生成的文件中选取 ----
+    gen_files = st.session_state.get("generated_training_files", [])
+    gen_paths = {}
+    for gf in gen_files:
+        fpath = merge_out_dir / gf["文件名"]
+        if fpath.exists():
+            label = f"{gf['文件名']}  ({gf['样本数']}样本, {gf['特征数']}特征, {gf['性能列']})"
+            gen_paths[label] = fpath
+
+    input_source = st.radio(
+        "选择训练数据来源",
+        ["从已生成的文件中选择", "上传 CSV"],
+        horizontal=True, key="train_input_source"
+    )
+
+    input_file = None
+    if input_source == "从已生成的文件中选择":
+        if gen_paths:
+            sel_label = st.selectbox("选择训练文件", list(gen_paths.keys()), key="train_file_select")
+            input_file = gen_paths[sel_label]
+            st.info(f"已选择：`{input_file.name}`")
+        else:
+            st.info("暂无已生成文件，请先在 Step 1 中合并生成")
+            input_file = None
+    else:
+        input_file = st.file_uploader("上传 CSV 训练数据", type=["csv"], key="train_csv_upload")
+
+    if input_file is not None:
+        try:
+            if isinstance(input_file, str) or isinstance(input_file, Path):
+                df = pd.read_csv(input_file)
+            else:
+                df = pd.read_csv(input_file)
+            st.info(f"📊 {len(df)} 样本 × {df.shape[1]} 列")
+            with st.expander("数据预览", expanded=False):
+                st.dataframe(df.head(10), use_container_width=True)
+        except Exception as e:
+            st.error(f"读取失败：{e}")
+            df = None
+    else:
+        df = None
+
+    # ---- 目标&模型选择 ----
+    if df is not None:
+        num_cols = [c for c in df.columns if c != 'SMILES' and pd.api.types.is_numeric_dtype(df[c])]
+        st.subheader("🎯 预测目标")
+        target_var = st.selectbox(
+            "选择目标变量（性能列）",
+            num_cols,
+            key="train_target"
+        )
+        
+        st.subheader("🔧 模型选择")
+        col1, col2 = st.columns(2)
+        with col1:
+            model_type = st.selectbox(
+                "选择模型",
+                ['rf', 'gb', 'lr', 'ridge'],
+                format_func=lambda x: {
+                    'rf': '随机森林 (Random Forest)',
+                    'gb': '梯度提升 (Gradient Boosting)',
+                    'lr': '线性回归 (Linear Regression)',
+                    'ridge': '岭回归 (Ridge Regression)'
+                }.get(x, x),
+                key="train_model"
+            )
+        with col2:
+            iterations = st.number_input(
+                "迭代次数/树数量",
+                min_value=100, max_value=20000,
+                value=Config.DEFAULT_ITERATIONS, step=100,
+                key="train_iter"
+            )
+
+        if st.button("▶ 训练模型", type="primary", use_container_width=True):
+            with st.spinner("🚀 模型训练进行中..."):
                 try:
                     from sklearn.model_selection import train_test_split
                     from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
                     from sklearn.linear_model import LinearRegression, Ridge
                     from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
                     import joblib
-                    
-                    df = pd.read_csv(input_file)
-                    
-                    if target_var not in df.columns:
-                        st.error(f"未找到目标列: {target_var}")
-                        return
-                    
+
                     y = df[target_var].values
                     X = df.drop(columns=[target_var, 'SMILES'], errors='ignore')
                     X = X.select_dtypes(include=[np.number]).fillna(0)
-                    
+
                     X_train, X_test, y_train, y_test = train_test_split(
                         X, y, test_size=0.2, random_state=42
                     )
-                    
-                    st.info(f"训练集: {len(X_train)}, 测试集: {len(X_test)}")
-                    
+                    st.info(f"训练集: {len(X_train)} 样本, 测试集: {len(X_test)} 样本")
+
                     if model_type == 'rf':
-                        model = RandomForestRegressor(n_estimators=iterations, max_depth=10, 
+                        model = RandomForestRegressor(n_estimators=iterations, max_depth=10,
                                                      random_state=42, n_jobs=-1)
                     elif model_type == 'gb':
                         model = GradientBoostingRegressor(n_estimators=iterations, max_depth=5,
@@ -2434,58 +2624,54 @@ def create_training_page():
                         model = LinearRegression()
                     else:
                         model = Ridge(alpha=1.0)
-                    
-                    with st.spinner("训练中..."):
-                        model.fit(X_train, y_train)
-                    
+
+                    model.fit(X_train, y_train)
                     y_pred = model.predict(X_test)
-                    
+
                     r2 = r2_score(y_test, y_pred)
                     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
                     mae = mean_absolute_error(y_test, y_pred)
-                    
-                    # 显示结果卡片
-                    st.markdown("""
-                    <div style="
-                        background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
-                        border: 1px solid #C7D2FE;
-                        border-radius: 16px;
-                        padding: 24px;
-                        margin: 24px 0;
-                    ">
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st.success("训练完成！")
-                    
+
+                    st.success("✅ 训练完成！")
                     col1, col2, col3 = st.columns(3)
                     col1.metric("R²", f"{r2:.4f}")
                     col2.metric("RMSE", f"{rmse:.4f}")
                     col3.metric("MAE", f"{mae:.4f}")
-                    
+
+                    # 保存模型
                     model_file = Config.MODEL_DIR / f"{target_var}_{model_type}.pkl"
                     joblib.dump(model, model_file)
-                    st.success(f"模型已保存到: {model_file}")
-                    
-                    results_df = pd.DataFrame([{
-                        'model': model_type,
-                        'R2': r2,
-                        'RMSE': rmse,
-                        'MAE': mae
-                    }])
-                    results_file = Config.MODEL_DIR / f"{target_var}_summary.csv"
-                    results_df.to_csv(results_file, index=False)
-                    
-                    st.session_state.training_results = results_df
-                    
+                    st.success(f"📦 模型已保存: `{model_file}`")
+
+                    results_file = Config.MODEL_DIR / f"{target_var}_{model_type}_summary.csv"
+                    pd.DataFrame([{
+                        'model': model_type, 'target': target_var,
+                        'R2': r2, 'RMSE': rmse, 'MAE': mae,
+                        'train_samples': len(X_train), 'test_samples': len(X_test),
+                        'features': X.shape[1]
+                    }]).to_csv(results_file, index=False)
+                    st.info(f"📋 训练摘要已保存: `{results_file}`")
+
+                    st.session_state.training_results = {
+                        'model': model_type, 'target': target_var,
+                        'r2': r2, 'rmse': rmse, 'mae': mae
+                    }
+
                 except Exception as e:
                     st.error(f"训练失败: {str(e)}")
-    
-    # 显示历史结果
-    if st.session_state.training_results is not None:
+                    import traceback
+                    traceback.print_exc()
+
+    # ---- 历史结果 ----
+    if st.session_state.get("training_results"):
         st.markdown("---")
-        st.subheader("📋 训练结果")
-        st.dataframe(st.session_state.training_results, use_container_width=True)
+        st.subheader("📋 最新训练结果")
+        tr = st.session_state.training_results
+        c1, c2, c3 = st.columns(3)
+        c1.metric("R²", f"{tr.get('r2', 0):.4f}")
+        c2.metric("RMSE", f"{tr.get('rmse', 0):.4f}")
+        c3.metric("MAE", f"{tr.get('mae', 0):.4f}")
+        st.caption(f"模型: {tr.get('model', '')} | 目标: {tr.get('target', '')}")
 
 
 # ==================== 高通量筛选 ====================
