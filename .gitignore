@@ -62,3 +62,10 @@ new_*.txt
 smart_read_fn.py
 test_*.py
 test_*.xlsx
+
+# CatBoost temp files
+catboost_info/
+
+# Standalone drafts (not part of app)
+training_page_new.py
+*.app.py.new

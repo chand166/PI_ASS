@@ -21,13 +21,13 @@ logger = logging.getLogger(__name__)
 
 # 尝试导入其他模块
 try:
-    from descriptor_module import DescriptorCalculator
+    from modules.descriptor_module import DescriptorCalculator
     from training_module import ModelTrainer
 except ImportError:
     # 本地导入
     import sys
     sys.path.insert(0, str(Path(__file__).parent))
-    from descriptor_module import DescriptorCalculator
+    from modules.descriptor_module import DescriptorCalculator
     from training_module import ModelTrainer
 
 
@@ -36,25 +36,25 @@ class HighThroughputScreener:
     
     # 内置二酐数据库
     DIANHYDRIDES = {
-        'PMDA': 'O=C1C(=O)c2ccccc2C1=O',
-        'BPDA': 'O=C1C(=O)c2ccc3c2C3=O',
-        'ODPA': 'O=C1C(=O)c2ccc(Oc3ccc(C(=O)O5)cc3)cc2C1=O',
-        'BTDA': 'O=C1C(=O)c2ccc3c2C(=O)c4ccc(cc4C3=O)C(=O)O1',
-        '6FDA': 'O=C1C(=O)C(F)(F)C(F)(F)C(F)(F)C1=O',
-        'DSDA': 'O=C1C(=O)c2ccc3c(c2)C(=O)c4ccc(cc4C3=O)C1=O',
-        'JPDA': 'O=C1C(=O)c2cccc3c2C1=O',
+        'PMDA': 'O=C1OC(=O)c2cc3c(cc21)C(=O)OC3=O',
+        'BPDA': 'O=C1OC(=O)c2ccc(-c3ccc4c(c3)C(=O)OC4=O)cc21',
+        'ODPA': 'O=C1OC(=O)c2ccc(Oc3ccc4c(c3)C(=O)OC4=O)cc21',
+        'BTDA': 'O=C1OC(=O)c2ccc(C(=O)c3ccc4c(c3)C(=O)OC4=O)cc21',
+        '6FDA': 'O=C1OC(=O)c2ccc(C(C3=CC4=C(C=C3)C(=O)OC4=O)(C(F)(F)F)C(F)(F)F)cc21',
+        'DSDA': 'O=C1OC(=O)c2ccc(S(=O)(=O)c3ccc4c(c3)C(=O)OC4=O)cc21',
+        'JPDA': 'O=C1OC(=O)c2ccc3c4c(c5c(c45)C(=O)OC3=O)ccc21',
     }
     
     # 内置二胺数据库  
     DIAMINES = {
-        'ODA': 'COc1ccc(N)cc1OC',
-        'MDA': 'Cc1ccc(N)cc1',
-        'DDE': 'NCCNCCN',
+        'ODA': 'Nc1ccc(Oc2ccc(N)cc2)cc1',
+        'MDA': 'Nc1ccc(Cc2ccc(N)cc2)cc1',
+        'DDE': 'Nc1ccc(S(=O)(=O)c2ccc(N)cc2)cc1',
         'm-PDA': 'Nc1cccc(N)c1',
         'p-PDA': 'Nc1ccc(N)cc1',
-        '4,4-ODA': 'COc1ccc(Nc2ccc(OC)cc2)cc1',
-        'TFDB': 'Nc1c(N)ccc(N)c1',
-        'BAPP': 'CC(C)(C)c1ccc(NCCOCCOc2ccc(C(C)(C)C)cc2)cc1',
+        '4,4-ODA': 'Nc1ccc(Oc2ccc(N)cc2)cc1',
+        'TFDB': 'Nc1ccc(-c2ccc(N)c(C(F)(F)F)c2)c(C(F)(F)F)c1',
+        'BAPP': 'Nc1ccc(Oc2ccc(C(C)(C)c3ccc(Oc4ccc(N)cc4)cc3)cc2)cc1',
     }
     
     def __init__(self, output_dir: str = None):

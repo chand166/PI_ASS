@@ -1049,75 +1049,72 @@ def create_sidebar():
     lang = st.session_state.get('lang', 'zh')
     
     # Logo区域
-    st.sidebar.markdown(f"""
-    <div style="padding: 20px 0; text-align: center;">
-        <div style="
-            background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
-            width: 60px;
-            height: 60px;
-            border-radius: 16px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 28px;
-            box-shadow: 0 8px 30px rgba(79, 70, 229, 0.3);
-            margin-bottom: 12px;
-        ">
-            🧪
-        </div>
-        <h2 style="margin: 0; font-size: 1.5rem; font-weight: 800; 
-                   background: linear-gradient(135deg, #0F172A 0%, #4F46E5 100%);
-                   -webkit-background-clip: text;
-                   -webkit-text-fill-color: transparent;
-                   background-clip: text;">
-            PI-SCREEN
-        </h2>
-        <p style="color: #64748B; font-size: 0.8rem; margin-top: 4px;">
-            {t('app_subtitle', lang)}
-        </p>
-    </div>
-    <hr style="border: none; height: 1px; background: linear-gradient(90deg, transparent, #E2E8F0, transparent); margin: 16px 0;">
-    """, unsafe_allow_html=True)
+    st.sidebar.markdown(f'''
+<div style="padding: 20px 0; text-align: center;">
+<div style="
+background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+width: 60px;
+height: 60px;
+border-radius: 16px;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+font-size: 28px;
+box-shadow: 0 8px 30px rgba(79, 70, 229, 0.3);
+margin-bottom: 12px;
+">
+🧪
+</div>
+<h2 style="margin: 0; font-size: 1.5rem; font-weight: 800; 
+background: linear-gradient(135deg, #0F172A 0%, #4F46E5 100%);
+-webkit-background-clip: text;
+-webkit-text-fill-color: transparent;
+background-clip: text;">
+PI-SCREEN
+</h2>
+<p style="color: #64748B; font-size: 0.8rem; margin-top: 4px;">
+{t('app_subtitle', lang)}
+</p>
+</div>
+    ''', unsafe_allow_html=True)
     
     # RDKit状态指示器
     if check_rdkit():
-        st.sidebar.markdown(f"""
-        <div style="
-            background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
-            border: 1px solid #6EE7B7;
-            border-radius: 12px;
-            padding: 12px 16px;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        ">
-            <span style="font-size: 1.2rem;">✅</span>
-            <div>
-                <div style="font-weight: 600; color: #064E3B; font-size: 0.85rem;">{t('rdkit_ready', lang)}</div>
-                <div style="color: #059669; font-size: 0.75rem;">{t('rdkit_running', lang)}</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.sidebar.markdown(f'''
+<div style="
+background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+border: 1px solid #6EE7B7;
+border-radius: 12px;
+padding: 12px 16px;
+margin-bottom: 16px;
+display: flex;
+align-items: center;
+gap: 10px;
+">
+<span style="font-size: 1.2rem;">✅</span>
+<div>
+<div style="font-weight: 600; color: #064E3B; font-size: 0.85rem;">{t('rdkit_ready', lang)}</div>
+<div style="color: #059669; font-size: 0.75rem;">{t('rdkit_running', lang)}</div>
+</div>
+        ''', unsafe_allow_html=True)
     else:
-        st.sidebar.markdown(f"""
-        <div style="
-            background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
-            border: 1px solid #FCD34D;
-            border-radius: 12px;
-            padding: 12px 16px;
-            margin-bottom: 16px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        ">
-            <span style="font-size: 1.2rem;">⚠️</span>
-            <div>
-                <div style="font-weight: 600; color: #92400E; font-size: 0.85rem;">{t('rdkit_not_installed', lang)}</div>
-                <div style="color: #B45309; font-size: 0.75rem;">{t('rdkit_install_hint', lang)}</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.sidebar.markdown(f'''
+<div style="
+background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
+border: 1px solid #FCD34D;
+border-radius: 12px;
+padding: 12px 16px;
+margin-bottom: 16px;
+display: flex;
+align-items: center;
+gap: 10px;
+">
+<span style="font-size: 1.2rem;">⚠️</span>
+<div>
+<div style="font-weight: 600; color: #92400E; font-size: 0.85rem;">{t('rdkit_not_installed', lang)}</div>
+<div style="color: #B45309; font-size: 0.75rem;">{t('rdkit_install_hint', lang)}</div>
+</div>
+        ''', unsafe_allow_html=True)
     
     # 导航选项 (使用 i18n)
     pages = get_page_names(lang)
@@ -1129,15 +1126,13 @@ def create_sidebar():
         label_visibility="collapsed"
     )
     
-    st.sidebar.markdown(f"""
-    <hr style="border: none; height: 1px; background: linear-gradient(90deg, transparent, #E2E8F0, transparent); margin: 24px 0;">
-    
-    <div style="padding: 0 8px;">
-        <h4 style="color: #0F172A; font-size: 0.85rem; font-weight: 700; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
-            {t('quick_links', lang)}
-        </h4>
-    </div>
-    """, unsafe_allow_html=True)
+    st.sidebar.markdown(f'''
+<hr style="border: none; height: 1px; background: linear-gradient(90deg, transparent, #E2E8F0, transparent); margin: 24px 0;">
+<div style="padding: 0 8px;">
+<h4 style="color: #0F172A; font-size: 0.85rem; font-weight: 700; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;">
+{t('quick_links', lang)}
+</h4>
+    ''', unsafe_allow_html=True)
     
     # 快速链接按钮
     col1, col2 = st.sidebar.columns(2)
@@ -1166,26 +1161,25 @@ def create_sidebar():
             st.toast(f"Output: {Config.OUTPUT_DIR}")
     
     # 底部信息
-    st.sidebar.markdown("""
-    <div style="
-        position: fixed;
-        bottom: 20px;
-        left: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%);
-        border: 1px solid #E2E8F0;
-        border-radius: 12px;
-        padding: 12px 16px;
-        text-align: center;
-    ">
-        <div style="color: #64748B; font-size: 0.75rem;">
-            PI-SCREEN v2.0
-        </div>
-        <div style="color: #94A3B8; font-size: 0.7rem; margin-top: 2px;">
-            Powered by AI
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.sidebar.markdown('''
+<div style="
+position: fixed;
+bottom: 20px;
+left: 20px;
+right: 20px;
+background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%);
+border: 1px solid #E2E8F0;
+border-radius: 12px;
+padding: 12px 16px;
+text-align: center;
+">
+<div style="color: #64748B; font-size: 0.75rem;">
+PI-SCREEN v2.0
+</div>
+<div style="color: #94A3B8; font-size: 0.7rem; margin-top: 2px;">
+Powered by AI
+</div>
+    ''', unsafe_allow_html=True)
     
     return page
 
@@ -2345,336 +2339,596 @@ def create_descriptors_page():
 
 
 # ==================== 模型训练 ====================
-def create_training_page():
-    """模型训练页面"""
-    st.title("🤖 模型训练")
-    st.markdown("<p style='color: #64748B; margin-bottom: 24px;'>描述符-性能合并 → 自动生成训练数据集 → 训练模型</p>", unsafe_allow_html=True)
 
-    # ===================== 第一步：描述符-性能合并 =====================
-    st.markdown("---")
-    st.markdown("### 📦 Step 1：描述符-性能自动合并")
-    st.caption("将描述符表与性能表按 SMILES 对齐，对每组（描述符源 × 性能列）自动生成独立的训练数据文件")
+def _show_training_comparison(hist, y_train=None, y_train_pred=None,
+                              y_val=None, y_val_pred=None,
+                              y_test=None, y_test_pred=None,
+                              target_var=None):
+    """显示训练结果对比图（R²散点图 + 历史对比条形图）"""
+    from sklearn.metrics import r2_score
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    # 如果有新训练的散点数据，显示三组散点图
+    if y_train is not None and y_test is not None:
+        fig = make_subplots(rows=1, cols=3,
+                            subplot_titles=[f"训练集 (R²={r2_score(y_train, y_train_pred):.4f})",
+                                            f"验证集 (R²={r2_score(y_val, y_val_pred):.4f})",
+                                            f"测试集 (R²={r2_score(y_test, y_test_pred):.4f})"],
+                            shared_yaxes=False)
+        for col, (yt, yp, color, name) in enumerate([
+            (y_train, y_train_pred, "#4F46E5", "训练"),
+            (y_val, y_val_pred, "#F59E0B", "验证"),
+            (y_test, y_test_pred, "#10B981", "测试"),
+        ], start=1):
+            fig.add_trace(go.Scatter(
+                x=yt, y=yp, mode="markers",
+                marker=dict(color=color, size=6, opacity=0.6),
+                name=name,
+            ), row=1, col=col)
+            vmin = min(yt.min(), yp.min())
+            vmax = max(yt.max(), yp.max())
+            fig.add_trace(go.Scatter(
+                x=[vmin, vmax], y=[vmin, vmax],
+                mode="lines", line=dict(color="gray", dash="dash"),
+                showlegend=False,
+            ), row=1, col=col)
+            fig.update_xaxes(title_text="真实值", row=1, col=col)
+            fig.update_yaxes(title_text="预测值", row=1, col=col)
+        fig.update_layout(height=400, title_text=f"🎯 {target_var} 预测结果",
+                          showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # 历史对比条形图
+    if hist:
+        df = pd.DataFrame(hist)
+        if all(c in df.columns for c in ["model", "R2_test"]):
+            fig2 = go.Figure()
+            fig2.add_trace(go.Bar(
+                x=df["model"], y=df["R2_test"],
+                marker_color="#4F46E5",
+                text=df["R2_test"].round(3),
+                textposition="outside",
+            ))
+            fig2.update_layout(
+                title="📊 模型历史测试R²对比",
+                xaxis_title="模型",
+                yaxis_title="R²(测试)",
+                height=300,
+                yaxis=dict(range=[-0.5, 1.0]),
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+            with st.expander("📋 详细结果", expanded=False):
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+def create_training_page():
+    """模型训练页面 — 描述符-性能合并 + 9种算法 + Optuna + K折CV"""
+    import optuna, io, zipfile, joblib
+    from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.model_selection import KFold, train_test_split
+    from modules.descriptor_module import DescriptorCalculator
+
+    MODEL_MAP = {
+        'RF': '随机森林 (Random Forest)',
+        'ET': '极端随机树 (Extra Trees)',
+        'XGB': 'XGBoost',
+        'CatBoost': 'CatBoost',
+        'LGBM': 'LightGBM',
+        'SVM': '支持向量机 (SVR)',
+        'KNN': 'K近邻 (KNN)',
+        'ANN': '人工神经网络 (MLP)',
+        'DNN': '深度神经网络 (Deep MLP)',
+    }
 
     merge_out_dir = Config.OUTPUT_DIR / "training_data"
     merge_out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ---- 1a. 描述符数据源 ----
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**🧪 描述符数据**")
-        desc_res = _DESCRIPTOR_STATE.get("results")
-        use_desc = st.checkbox("使用「描述符计算」结果", value=(desc_res is not None),
-                               disabled=(desc_res is None), key="train_use_desc")
-        desc_up = st.file_uploader("或上传已算好的描述符 CSV", type=["csv"], key="train_desc_up")
+    st.title("🧠 模型训练")
+    st.markdown("<p style='color: #64748B; margin-bottom: 24px;'>描述符-性能合并 → 自动生成训练数据集 → 9种ML算法 + Optuna + K折CV</p>", unsafe_allow_html=True)
 
-    # ---- 1b. 性能数据源 ----
-    with c2:
-        st.markdown("**📊 性能数据**")
-        perf_up = st.file_uploader("上传性能 CSV（需含 SMILES + 性能列）",
-                                   type=["csv"], key="train_perf_up")
+    # ===================== Step 1：描述符-性能合并 =====================
+    st.markdown("---")
+    st.markdown("### 📦 Step 1：描述符-性能自动合并")
+    st.caption("从磁盘CSV加载描述符（rdkit/morgan/mordred/padel）+ 上传性能数据 → 酸酐+二胺等权加和 → 自动生成训练文件")
 
-    # ---- 收集描述符 DataFrame ----
-    desc_dfs = {}  # {source_name: DataFrame}
-    if use_desc and desc_res:
-        desc_dfs = {k: v for k, v in desc_res.items() if isinstance(v, pd.DataFrame) and not v.empty}
-    if desc_up:
+    desc_dir = Config.OUTPUT_DIR
+    desc_files = {
+        'rdkit': desc_dir / 'descriptors_rdkit.csv',
+        'morgan': desc_dir / 'descriptors_morgan.csv',
+        'mordred': desc_dir / 'descriptors_mordred.csv',
+        'padel': desc_dir / 'descriptors_padel.csv',
+    }
+    available_desc = {k: v for k, v in desc_files.items() if v.exists()}
+
+    if not available_desc:
+        st.warning("⚠️ 未找到描述符CSV文件，请先在「🧪 描述符计算」页面计算描述符")
+    else:
+        sel_desc_names = st.multiselect(
+            "选择描述符源",
+            list(available_desc.keys()),
+            default=list(available_desc.keys()),
+            key="merge_sel_desc",
+            help="从磁盘加载已计算的描述符CSV文件"
+        )
+
+    perf_up = st.file_uploader("上传性能 Excel/CSV（需含酸酐SMILES、二胺SMILES和性能列）",
+                               type=["csv", "xlsx"], key="merge_perf_up")
+
+    if perf_up is not None and available_desc and sel_desc_names:
         try:
-            up_df = pd.read_csv(desc_up)
-            if 'SMILES' in up_df.columns:
-                desc_dfs["upload"] = up_df
-                st.info(f"📄 描述符上传文件：{len(up_df)} 行, {up_df.shape[1]} 列")
-        except Exception as e:
-            st.error(f"描述符 CSV 读取失败：{e}")
-
-    # ---- 读取性能表 ----
-    perf_df = None
-    if perf_up:
-        try:
-            perf_df = pd.read_csv(perf_up)
+            if perf_up.name.endswith(".xlsx"):
+                perf_df = pd.read_excel(perf_up)
+            else:
+                perf_df = pd.read_csv(perf_up)
             perf_df.columns = perf_df.columns.str.strip()
-            # 检测 SMILES 列
-            sm_candidates = [c for c in perf_df.columns if 'smiles' in str(c).lower() or c == 'SMILES']
-            perf_sm_col = sm_candidates[0] if sm_candidates else None
-            if perf_sm_col:
-                if perf_sm_col != 'SMILES':
-                    perf_df = perf_df.rename(columns={perf_sm_col: 'SMILES'})
-                st.info(f"📄 性能表：{len(perf_df)} 行, {perf_sm_col} 列名={perf_sm_col}")
+
+            all_cols = list(perf_df.columns)
+            da_candidates = [c for c in all_cols
+                             if '酸酐' in c and 'SMILES' in c] + \
+                            [c for c in all_cols
+                             if 'dianhydride' in str(c).lower() and 'smiles' in str(c).lower()]
+            di_candidates = [c for c in all_cols
+                             if '二胺' in c and 'SMILES' in c] + \
+                            [c for c in all_cols
+                             if 'diamine' in str(c).lower() and 'smiles' in str(c).lower()]
+
+            if not da_candidates or not di_candidates:
+                st.error("未找到酸酐SMILES/二胺SMILES列")
             else:
-                st.warning("性能表未找到 SMILES 列，请确保列名包含 'smiles'")
-                perf_df = None
-        except Exception as e:
-            st.error(f"性能 CSV 读取失败：{e}")
+                da_col = da_candidates[0]
+                di_col = di_candidates[0]
 
-    # ---- 预览 & 合并 ----
-    if desc_dfs and perf_df is not None:
-        # 性能表里所有数字列（排除 SMILES）
-        perf_num_cols = [c for c in perf_df.columns
-                         if c != 'SMILES' and pd.api.types.is_numeric_dtype(perf_df[c])]
-        # 用户选择要用的性能列
-        if not perf_num_cols:
-            st.warning("性能表中没有检测到数字列")
-        else:
-            sel_perf_cols = st.multiselect(
-                "选择要合并的性能目标列",
-                perf_num_cols,
-                default=perf_num_cols[:5],
-                key="train_sel_perf"
-            )
-            if not sel_perf_cols:
-                st.info("请至少选择一个性能列")
-            else:
-                # 选择描述符源
-                desc_names = list(desc_dfs.keys())
-                sel_desc = [n for n in desc_names if n != "upload"]
-                sel_desc_names = st.multiselect(
-                    "选择要合并的描述符源",
-                    desc_names,
-                    default=sel_desc[:3],
-                    key="train_sel_desc"
-                )
-                if sel_desc_names and sel_perf_cols:
-                    # 预览匹配情况
-                    perf_smiles = set(perf_df['SMILES'].dropna().str.strip().str.lower())
-                    st.markdown("**匹配预览**")
-                    match_rows = []
-                    col_counts = {}
-                    for dn in sel_desc_names:
-                        ddf = desc_dfs[dn]
-                        ddf_sm = set(ddf['SMILES'].dropna().str.strip().str.lower())
-                        n_match = len(perf_smiles & ddf_sm)
-                        desc_only = len(ddf_sm - perf_smiles)
-                        perf_only = len(perf_smiles - ddf_sm)
-                        match_rows.append({
-                            "描述符源": dn,
-                            "描述符行数": len(ddf),
-                            "性能匹配数": n_match,
-                            "描述符独有": desc_only,
-                            "性能独有": perf_only
-                        })
-                        col_counts[dn] = len(ddf.columns)
-                    match_df = pd.DataFrame(match_rows)
-                    st.dataframe(match_df, use_container_width=True, hide_index=True)
+                perf_num_cols = [c for c in all_cols
+                                 if c not in (da_col, di_col)
+                                 and pd.api.types.is_numeric_dtype(perf_df[c])]
+                if not perf_num_cols:
+                    st.warning("性能表中没有检测到数字列")
+                else:
+                    sel_perf_cols = st.multiselect(
+                        "选择要合并的性能目标列",
+                        perf_num_cols,
+                        default=perf_num_cols[:5],
+                        key="merge_sel_perf"
+                    )
 
-                    # 生成按钮
-                    n_files = len(sel_desc_names) * len(sel_perf_cols)
-                    if st.button(f"▶ 生成 {n_files} 个训练文件", type="primary",
-                                 use_container_width=True, key="train_merge_btn"):
-                        try:
-                            generated = []
-                            perf_lookup = perf_df[['SMILES'] + sel_perf_cols].dropna(subset=['SMILES']).copy()
-                            perf_lookup['SMILES'] = perf_lookup['SMILES'].str.strip()
-                            perf_lookup = perf_lookup.drop_duplicates(subset=['SMILES'])
+                    if sel_perf_cols:
+                        total_pairs = len(perf_df)
+                        total_files = len(sel_desc_names) * len(sel_perf_cols)
+                        c1, c2 = st.columns(2)
+                        c1.metric("性能表行数", total_pairs)
+                        c2.metric("预计生成文件数", total_files)
 
-                            for dn in sel_desc_names:
-                                ddf = desc_dfs[dn].copy()
-                                ddf['SMILES'] = ddf['SMILES'].astype(str).str.strip()
-                                merged = ddf.merge(perf_lookup, on='SMILES', how='inner')
-                                if merged.empty:
-                                    continue
-                                for pc in sel_perf_cols:
-                                    if pc not in merged.columns:
-                                        continue
-                                    # 特征列：所有数字列（除 SMILES 和当前性能列）
-                                    feature_cols = [c for c in merged.columns
-                                                    if c not in ('SMILES', pc)
-                                                    and pd.api.types.is_numeric_dtype(merged[c])]
-                                    label_col = pc
-                                    out_df = merged[['SMILES'] + feature_cols + [label_col]].dropna(subset=[label_col]).reset_index(drop=True)
-                                    if out_df.empty:
-                                        continue
-                                    fname = f"{dn}_{pc}.csv"
-                                    fpath = merge_out_dir / fname
-                                    out_df.to_csv(fpath, index=False)
-                                    generated.append({
-                                        "文件名": fname,
-                                        "描述符源": dn,
-                                        "性能列": pc,
-                                        "特征数": len(feature_cols),
-                                        "样本数": len(out_df)
-                                    })
+                        if st.button(f"▶ 生成 {total_files} 个训练文件 → 打包 ZIP",
+                                     type="primary", use_container_width=True,
+                                     key="merge_gen_btn"):
+                            try:
+                                calc = DescriptorCalculator()
+                                pair_df = perf_df[[da_col, di_col] + sel_perf_cols].copy()
 
-                            if generated:
-                                gen_df = pd.DataFrame(generated)
-                                st.success(f"✅ 已生成 {len(generated)} 个训练文件到：`{merge_out_dir}`")
-                                st.dataframe(gen_df, use_container_width=True, hide_index=True)
-                                st.session_state.generated_training_files = generated
-                            else:
-                                st.warning("合并后无有效数据行，请检查 SMILES 匹配情况")
+                                all_desc = {}
+                                for dn in sel_desc_names:
+                                    df = pd.read_csv(available_desc[dn])
+                                    if not df.empty:
+                                        all_desc[dn] = df
 
-                        except Exception as e:
-                            st.error(f"合并失败：{e}")
-                            import traceback
-                            traceback.print_exc()
+                                combined = calc.combine_monomer_pairs(
+                                    descriptor_dfs=all_desc,
+                                    pair_df=pair_df,
+                                    da_smiles_col=da_col,
+                                    di_smiles_col=di_col,
+                                    perf_cols=sel_perf_cols,
+                                )
 
-                    # 显示已生成的文件列表
+                                zip_buf = io.BytesIO()
+                                generated = []
+                                total_steps = len(sel_desc_names) * len(sel_perf_cols)
+                                step = 0
+                                pbar = st.progress(0.0)
+                                stext = st.empty()
+                                with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                                    for src, cdf in combined.items():
+                                        if cdf.empty:
+                                            step += len(sel_perf_cols)
+                                            continue
+                                        for pc in sel_perf_cols:
+                                            step += 1
+                                            pbar.progress(step / total_steps)
+                                            stext.text(f"⏳ [{step}/{total_steps}] {src} × {pc}...")
+                                            if pc not in cdf.columns:
+                                                continue
+                                            feature_cols = [c for c in cdf.columns
+                                                            if c not in (da_col, di_col, *sel_perf_cols)
+                                                            and pd.api.types.is_numeric_dtype(cdf[c])]
+                                            out_df = cdf[[da_col, di_col] + feature_cols + [pc]].copy()
+                                            out_df[feature_cols] = out_df[feature_cols].fillna(0.0)
+                                            out_df = out_df.dropna(subset=[pc]).reset_index(drop=True)
+                                            if out_df.empty:
+                                                continue
+                                            fname = f"monomer_sum_{src}_{pc}.csv"
+                                            for ch in ['/', '\\', ':', '*', '?', '"', '<', '>', '|']:
+                                                fname = fname.replace(ch, '_')
+                                            csv_bytes = out_df.to_csv(index=False).encode("utf-8")
+                                            zf.writestr(fname, csv_bytes)
+                                            generated.append({"文件名": fname, "描述符源": src,
+                                                              "性能列": pc, "特征数": len(feature_cols),
+                                                              "样本数": len(out_df)})
+
+                                if generated:
+                                    with zipfile.ZipFile(zip_buf) as zf:
+                                        for g in generated:
+                                            data = zf.read(g["文件名"])
+                                            (merge_out_dir / g["文件名"]).write_bytes(data)
+                                    pbar.empty()
+                                    stext.empty()
+                                    gen_df = pd.DataFrame(generated)
+                                    st.success(f"✅ 已生成 {len(generated)} 个训练文件")
+                                    st.dataframe(gen_df, use_container_width=True, hide_index=True)
+                                    st.session_state.generated_training_files = generated
+                                    zip_buf.seek(0)
+                                    st.download_button("📥 ZIP 打包下载", zip_buf,
+                                                       f"training_data_{len(generated)}files.zip",
+                                                       "application/zip")
+                                else:
+                                    st.warning("合并后无有效数据，请检查 SMILES 匹配")
+                            except Exception as e:
+                                st.error(f"合并失败: {e}")
+                                import traceback; traceback.print_exc()
+
                     if st.session_state.get("generated_training_files"):
                         st.markdown("**📁 已生成文件列表**")
                         gdf = pd.DataFrame(st.session_state.generated_training_files)
                         st.dataframe(gdf, use_container_width=True, hide_index=True)
 
-    elif not desc_dfs:
-        st.info("👆 请先在「描述符计算」页面算好描述符，或上传描述符 CSV")
-    elif perf_df is None:
-        st.info("👆 请上传性能数据 CSV（需含 SMILES 列和性能目标列）")
+        except Exception as e:
+            st.error(f"读取性能表失败: {e}")
 
-    # ===================== 第二步：模型训练 =====================
+    # ===================== Step 2：模型训练 =====================
     st.markdown("---")
     st.markdown("### 🧠 Step 2：模型训练")
-    st.caption("从已生成的文件中选择一个训练数据集，或上传自定义 CSV 直接训练")
-
-    # ---- 从生成的文件中选取 ----
-    gen_files = st.session_state.get("generated_training_files", [])
-    gen_paths = {}
-    for gf in gen_files:
-        fpath = merge_out_dir / gf["文件名"]
-        if fpath.exists():
-            label = f"{gf['文件名']}  ({gf['样本数']}样本, {gf['特征数']}特征, {gf['性能列']})"
-            gen_paths[label] = fpath
+    st.caption("从文件夹批量导入训练文件，自动检测目标列，循环训练全部文件")
 
     input_source = st.radio(
         "选择训练数据来源",
-        ["从已生成的文件中选择", "上传 CSV"],
-        horizontal=True, key="train_input_source"
+        ["📁 从文件夹批量导入", "📄 上传多个 CSV"],
+        horizontal=True, key="train_input_source2"
     )
 
-    input_file = None
-    if input_source == "从已生成的文件中选择":
-        if gen_paths:
-            sel_label = st.selectbox("选择训练文件", list(gen_paths.keys()), key="train_file_select")
-            input_file = gen_paths[sel_label]
-            st.info(f"已选择：`{input_file.name}`")
-        else:
-            st.info("暂无已生成文件，请先在 Step 1 中合并生成")
-            input_file = None
-    else:
-        input_file = st.file_uploader("上传 CSV 训练数据", type=["csv"], key="train_csv_upload")
-
-    if input_file is not None:
-        try:
-            if isinstance(input_file, str) or isinstance(input_file, Path):
-                df = pd.read_csv(input_file)
-            else:
-                df = pd.read_csv(input_file)
-            st.info(f"📊 {len(df)} 样本 × {df.shape[1]} 列")
-            with st.expander("数据预览", expanded=False):
-                st.dataframe(df.head(10), use_container_width=True)
-        except Exception as e:
-            st.error(f"读取失败：{e}")
-            df = None
-    else:
-        df = None
-
-    # ---- 目标&模型选择 ----
-    if df is not None:
-        num_cols = [c for c in df.columns if c != 'SMILES' and pd.api.types.is_numeric_dtype(df[c])]
-        st.subheader("🎯 预测目标")
-        target_var = st.selectbox(
-            "选择目标变量（性能列）",
-            num_cols,
-            key="train_target"
+    input_files = []
+    if input_source == "📁 从文件夹批量导入":
+        folder_path = st.text_input(
+            "训练数据文件夹路径",
+            value=str(merge_out_dir),
+            key="train_folder_path2"
         )
-        
-        st.subheader("🔧 模型选择")
-        col1, col2 = st.columns(2)
-        with col1:
-            model_type = st.selectbox(
-                "选择模型",
-                ['rf', 'gb', 'lr', 'ridge'],
-                format_func=lambda x: {
-                    'rf': '随机森林 (Random Forest)',
-                    'gb': '梯度提升 (Gradient Boosting)',
-                    'lr': '线性回归 (Linear Regression)',
-                    'ridge': '岭回归 (Ridge Regression)'
-                }.get(x, x),
-                key="train_model"
+        folder = Path(folder_path)
+        if folder.exists() and folder.is_dir():
+            csv_files = sorted(folder.glob("*.csv"))
+            if csv_files:
+                file_options = {f.name: f for f in csv_files}
+                sel_files = st.multiselect(
+                    "选择要训练的 CSV 文件",
+                    list(file_options.keys()),
+                    default=list(file_options.keys())[:5],
+                    key="train_folder_files2"
+                )
+                for fn in sel_files:
+                    input_files.append((file_options[fn], fn))
+                if input_files:
+                    st.info(f"✅ 已选择 {len(input_files)} 个文件")
+            else:
+                st.info("该文件夹中没有 CSV 文件")
+        else:
+            st.info("请输入有效的文件夹路径")
+    else:
+        uploaded = st.file_uploader("上传 CSV 训练数据", type=["csv"],
+                                    key="train_csv_upload2", accept_multiple_files=True)
+        if uploaded:
+            for uf in uploaded:
+                input_files.append((uf, uf.name))
+            st.info(f"✅ 已上传 {len(input_files)} 个文件")
+
+    if not input_files:
+        return
+
+    st.subheader("🔧 模型与优化设置")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        sel_models = st.multiselect(
+            "选择要训练的模型（可选多个）",
+            list(MODEL_MAP.keys()),
+            default=["RF", "ET", "XGB"],
+            key="train_models2"
+        )
+    with col2:
+        n_trials = st.number_input("Optuna 优化次数", 10, 500, 100, step=10,
+                                   key="optuna_trials2",
+                                   help="每个模型的贝叶斯超参搜索次数")
+    with col3:
+        test_size = st.slider("测试集比例", 0.05, 0.4, 0.2, 0.05,
+                              key="test_ratio2",
+                              help="剩余 80% 中 7:2 划分训练/验证")
+
+    with st.expander("⚙️ 高级参数", expanded=False):
+        ac1, ac2, ac3 = st.columns(3)
+        with ac1:
+            early_stop = st.checkbox("启用早停", value=True, key="use_early_stop2")
+            val_split = st.slider("验证集比例", 0.1, 0.4, 0.25, 0.05, key="val_ratio2")
+        with ac2:
+            do_feature_select = st.checkbox("特征选择", value=False, key="use_feat2")
+            do_scaling = st.checkbox("特征标准化", value=True, key="use_scaling2")
+        with ac3:
+            cv_folds = st.number_input("K折CV", 2, 10, 5, key="cv_folds2",
+                                       help="Optuna内部使用K折交叉验证评估")
+            random_state = st.number_input("随机种子", 0, 9999, 42, key="rs2")
+
+    if not sel_models:
+        st.info("请至少选择一个模型")
+        return
+
+    if st.button("🚀 开始训练（Optuna 优化 + K折CV）", type="primary",
+                 use_container_width=True, key="train_start_btn2"):
+
+        total_file_tasks = len(input_files) * len(sel_models)
+        file_task_done = 0
+        pbar = st.progress(0.0)
+        stext = st.empty()
+        all_results = []
+        best_models = {}
+
+        for fp, fn in input_files:
+            try:
+                df = pd.read_csv(fp) if isinstance(fp, (str, Path)) else pd.read_csv(fp)
+            except Exception as e:
+                st.error(f"❌ {fn} 读取失败: {e}")
+                continue
+
+            num_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+            if not num_cols:
+                st.warning(f"⚠️ {fn} 没有数字列，跳过")
+                continue
+            target_var = num_cols[-1]
+            st.info(f"📄 {fn} → 目标: {target_var} ({len(df)} 样本)")
+
+            # 排除所有 SMILES 列和目标列
+            drop_cols = [c for c in df.columns if 'SMILES' in c.upper() or c == target_var]
+            X_raw = df.drop(columns=drop_cols, errors='ignore')
+            X_raw = X_raw.select_dtypes(include=[np.number]).fillna(0)
+            y_raw = df[target_var].values
+
+            X_rest, X_test, y_rest, y_test = train_test_split(
+                X_raw, y_raw, test_size=test_size, random_state=random_state
             )
-        with col2:
-            iterations = st.number_input(
-                "迭代次数/树数量",
-                min_value=100, max_value=20000,
-                value=Config.DEFAULT_ITERATIONS, step=100,
-                key="train_iter"
+            val_ratio_adj = val_split / (1 - test_size)
+            X_train, X_val, y_train, y_val = train_test_split(
+                X_rest, y_rest, test_size=val_ratio_adj, random_state=random_state
             )
+            st.info(f"📊 划分: 训练 {len(X_train)} | 验证 {len(X_val)} | 测试 {len(X_test)}")
 
-        if st.button("▶ 训练模型", type="primary", use_container_width=True):
-            with st.spinner("🚀 模型训练进行中..."):
-                try:
-                    from sklearn.model_selection import train_test_split
-                    from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-                    from sklearn.linear_model import LinearRegression, Ridge
-                    from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-                    import joblib
+            for model_key in sel_models:
+                file_task_done += 1
+                pbar.progress(file_task_done / total_file_tasks)
+                stext.text(f"⏳ [{file_task_done}/{total_file_tasks}] {fn} → {MODEL_MAP[model_key]}...")
 
-                    y = df[target_var].values
-                    X = df.drop(columns=[target_var, 'SMILES'], errors='ignore')
-                    X = X.select_dtypes(include=[np.number]).fillna(0)
+                # ---- Optuna 目标函数（K折CV）----
+                def objective(trial):
+                    mk = model_key
+                    params = {}
 
-                    X_train, X_test, y_train, y_test = train_test_split(
-                        X, y, test_size=0.2, random_state=42
-                    )
-                    st.info(f"训练集: {len(X_train)} 样本, 测试集: {len(X_test)} 样本")
-
-                    if model_type == 'rf':
-                        model = RandomForestRegressor(n_estimators=iterations, max_depth=10,
-                                                     random_state=42, n_jobs=-1)
-                    elif model_type == 'gb':
-                        model = GradientBoostingRegressor(n_estimators=iterations, max_depth=5,
-                                                         random_state=42)
-                    elif model_type == 'lr':
-                        model = LinearRegression()
+                    if mk == "RF":
+                        params['n_estimators'] = trial.suggest_int('n', 50, 800, step=50)
+                        params['max_depth'] = trial.suggest_int('md', 3, 30)
+                        params['min_samples_split'] = trial.suggest_int('mss', 2, 20)
+                        params['min_samples_leaf'] = trial.suggest_int('msl', 1, 10)
+                        from sklearn.ensemble import RandomForestRegressor
+                        model_cls = lambda p: RandomForestRegressor(**p, random_state=random_state, n_jobs=-1)
+                    elif mk == "ET":
+                        params['n_estimators'] = trial.suggest_int('n', 50, 800, step=50)
+                        params['max_depth'] = trial.suggest_int('md', 3, 30)
+                        params['min_samples_split'] = trial.suggest_int('mss', 2, 20)
+                        params['min_samples_leaf'] = trial.suggest_int('msl', 1, 10)
+                        from sklearn.ensemble import ExtraTreesRegressor
+                        model_cls = lambda p: ExtraTreesRegressor(**p, random_state=random_state, n_jobs=-1)
+                    elif mk == "XGB":
+                        params['n_estimators'] = trial.suggest_int('n', 50, 800, step=50)
+                        params['max_depth'] = trial.suggest_int('md', 3, 15)
+                        params['learning_rate'] = trial.suggest_float('lr', 0.01, 0.3, log=True)
+                        params['subsample'] = trial.suggest_float('ss', 0.5, 1.0)
+                        params['colsample_bytree'] = trial.suggest_float('cbt', 0.5, 1.0)
+                        params['reg_alpha'] = trial.suggest_float('ra', 1e-8, 10.0, log=True)
+                        params['reg_lambda'] = trial.suggest_float('rl', 1e-8, 10.0, log=True)
+                        from xgboost import XGBRegressor
+                        model_cls = lambda p: XGBRegressor(**p, random_state=random_state, n_jobs=-1, verbosity=0)
+                    elif mk == "CatBoost":
+                        params['iterations'] = trial.suggest_int('it', 100, 1000, step=50)
+                        params['depth'] = trial.suggest_int('dp', 4, 10)
+                        params['learning_rate'] = trial.suggest_float('lr', 0.01, 0.3, log=True)
+                        params['l2_leaf_reg'] = trial.suggest_float('l2', 1e-3, 10.0, log=True)
+                        from catboost import CatBoostRegressor
+                        model_cls = lambda p: CatBoostRegressor(**p, random_seed=random_state, verbose=False)
+                    elif mk == "LGBM":
+                        params['n_estimators'] = trial.suggest_int('n', 50, 800, step=50)
+                        params['max_depth'] = trial.suggest_int('md', 3, 15)
+                        params['learning_rate'] = trial.suggest_float('lr', 0.01, 0.3, log=True)
+                        params['num_leaves'] = trial.suggest_int('nl', 10, 200)
+                        params['subsample'] = trial.suggest_float('ss', 0.5, 1.0)
+                        params['reg_alpha'] = trial.suggest_float('ra', 1e-8, 10.0, log=True)
+                        from lightgbm import LGBMRegressor
+                        model_cls = lambda p: LGBMRegressor(**p, random_state=random_state, n_jobs=-1, verbosity=-1)
+                    elif mk == "SVM":
+                        params['C'] = trial.suggest_float('C', 0.01, 1000, log=True)
+                        params['epsilon'] = trial.suggest_float('eps', 0.001, 1.0, log=True)
+                        from sklearn.svm import SVR
+                        model_cls = lambda p: SVR(**p)
+                    elif mk == "KNN":
+                        params['n_neighbors'] = trial.suggest_int('k', 3, 30)
+                        params['weights'] = trial.suggest_categorical('w', ['uniform', 'distance'])
+                        from sklearn.neighbors import KNeighborsRegressor
+                        model_cls = lambda p: KNeighborsRegressor(**p, n_jobs=-1)
+                    elif mk in ("ANN", "DNN"):
+                        n_layers = trial.suggest_int('layers', 2 if mk == 'DNN' else 1, 4 if mk == 'DNN' else 2)
+                        base = trial.suggest_int('base', 64, 256, step=32)
+                        hidden = tuple(max(base // (2 ** min(i, 3)), 8) for i in range(n_layers))
+                        params['hidden_layer_sizes'] = hidden
+                        params['alpha'] = trial.suggest_float('alpha', 1e-7, 0.1, log=True)
+                        params['learning_rate_init'] = trial.suggest_float('lr', 0.0001, 0.01, log=True)
+                        from sklearn.neural_network import MLPRegressor
+                        max_it = 1000 if mk == "DNN" else 500
+                        n_iter = 30 if mk == "DNN" else 20
+                        model_cls = lambda p: MLPRegressor(**p, activation="relu", max_iter=max_it,
+                                                         random_state=random_state, early_stopping=True,
+                                                         validation_fraction=0.1, n_iter_no_change=n_iter)
                     else:
-                        model = Ridge(alpha=1.0)
+                        return -1e10
 
-                    model.fit(X_train, y_train)
-                    y_pred = model.predict(X_test)
+                    X_tr = X_train.values
+                    y_tr = y_train
+                    if do_scaling:
+                        scl = StandardScaler()
+                        X_tr = scl.fit_transform(X_tr)
 
-                    r2 = r2_score(y_test, y_pred)
-                    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-                    mae = mean_absolute_error(y_test, y_pred)
+                    try:
+                        kf = KFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
+                        scores = []
+                        for tr_idx, va_idx in kf.split(X_tr):
+                            X_t, X_v = X_tr[tr_idx], X_tr[va_idx]
+                            y_t, y_v = y_tr[tr_idx], y_tr[va_idx]
+                            m = model_cls(params)
+                            if mk in ("XGB", "CatBoost", "LGBM") and early_stop and len(X_v) > 1:
+                                m.fit(X_t, y_t, eval_set=[(X_v, y_v)], verbose=False)
+                            else:
+                                m.fit(X_t, y_t)
+                            scores.append(r2_score(y_v, m.predict(X_v)))
+                        return float(np.mean(scores))
+                    except Exception:
+                        return -1e10
 
-                    st.success("✅ 训练完成！")
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("R²", f"{r2:.4f}")
-                    col2.metric("RMSE", f"{rmse:.4f}")
-                    col3.metric("MAE", f"{mae:.4f}")
+                # 执行 Optuna 优化
+                study = optuna.create_study(direction="maximize",
+                                            sampler=optuna.samplers.TPESampler(seed=random_state))
+                study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
-                    # 保存模型
-                    model_file = Config.MODEL_DIR / f"{target_var}_{model_type}.pkl"
-                    joblib.dump(model, model_file)
-                    st.success(f"📦 模型已保存: `{model_file}`")
+                best_params = study.best_params
 
-                    results_file = Config.MODEL_DIR / f"{target_var}_{model_type}_summary.csv"
-                    pd.DataFrame([{
-                        'model': model_type, 'target': target_var,
-                        'R2': r2, 'RMSE': rmse, 'MAE': mae,
-                        'train_samples': len(X_train), 'test_samples': len(X_test),
-                        'features': X.shape[1]
-                    }]).to_csv(results_file, index=False)
-                    st.info(f"📋 训练摘要已保存: `{results_file}`")
+                # 最终训练（全量训练 + 验证集）
+                X_full = np.vstack([X_train.values, X_val.values])
+                y_full = np.concatenate([y_train, y_val])
+                if do_scaling:
+                    scl = StandardScaler()
+                    X_train_sc = scl.fit_transform(X_train.values)
+                    X_val_sc = scl.transform(X_val.values)
+                    X_test_sc = scl.transform(X_test.values)
+                    X_full_sc = scl.fit_transform(X_full)
+                else:
+                    X_train_sc = X_train.values
+                    X_val_sc = X_val.values
+                    X_test_sc = X_test.values
+                    X_full_sc = X_full
 
-                    st.session_state.training_results = {
-                        'model': model_type, 'target': target_var,
-                        'r2': r2, 'rmse': rmse, 'mae': mae
-                    }
+                # 创建最终模型
+                final_model = None
+                if model_key == "RF":
+                    from sklearn.ensemble import RandomForestRegressor
+                    final_model = RandomForestRegressor(**best_params, random_state=random_state, n_jobs=-1)
+                elif model_key == "ET":
+                    from sklearn.ensemble import ExtraTreesRegressor
+                    final_model = ExtraTreesRegressor(**best_params, random_state=random_state, n_jobs=-1)
+                elif model_key == "XGB":
+                    from xgboost import XGBRegressor
+                    final_model = XGBRegressor(**best_params, random_state=random_state, n_jobs=-1, verbosity=0)
+                elif model_key == "CatBoost":
+                    from catboost import CatBoostRegressor
+                    final_model = CatBoostRegressor(**best_params, random_seed=random_state, verbose=False)
+                elif model_key == "LGBM":
+                    from lightgbm import LGBMRegressor
+                    final_model = LGBMRegressor(**best_params, random_state=random_state, n_jobs=-1, verbosity=-1)
+                elif model_key == "SVM":
+                    from sklearn.svm import SVR
+                    final_model = SVR(**best_params)
+                elif model_key == "KNN":
+                    from sklearn.neighbors import KNeighborsRegressor
+                    final_model = KNeighborsRegressor(**best_params, n_jobs=-1)
+                elif model_key in ("ANN", "DNN"):
+                    from sklearn.neural_network import MLPRegressor
+                    max_it = 1000 if model_key == "DNN" else 500
+                    n_iter = 30 if model_key == "DNN" else 20
+                    final_model = MLPRegressor(**best_params, activation="relu", max_iter=max_it,
+                                              random_state=random_state, early_stopping=True,
+                                              validation_fraction=0.1, n_iter_no_change=n_iter)
 
-                except Exception as e:
-                    st.error(f"训练失败: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
+                final_model.fit(X_full_sc, y_full)
 
-    # ---- 历史结果 ----
-    if st.session_state.get("training_results"):
-        st.markdown("---")
-        st.subheader("📋 最新训练结果")
-        tr = st.session_state.training_results
-        c1, c2, c3 = st.columns(3)
-        c1.metric("R²", f"{tr.get('r2', 0):.4f}")
-        c2.metric("RMSE", f"{tr.get('rmse', 0):.4f}")
-        c3.metric("MAE", f"{tr.get('mae', 0):.4f}")
-        st.caption(f"模型: {tr.get('model', '')} | 目标: {tr.get('target', '')}")
+                y_train_pred = final_model.predict(X_train_sc)
+                y_val_pred = final_model.predict(X_val_sc)
+                y_test_pred = final_model.predict(X_test_sc)
 
+                r2_train = r2_score(y_train, y_train_pred)
+                r2_val = r2_score(y_val, y_val_pred)
+                r2_test = r2_score(y_test, y_test_pred)
+                rmse_test = np.sqrt(mean_squared_error(y_test, y_test_pred))
+                mae_test = mean_absolute_error(y_test, y_test_pred)
 
-# ==================== 高通量筛选 ====================
+                # 保存模型
+                safe_name = target_var
+                for ch in ['/', '\\', ' ', '*', ':', '?', '"', '<', '>', '|']:
+                    safe_name = safe_name.replace(ch, '_')
+                model_file = Config.MODEL_DIR / f"{safe_name}_{model_key}.pkl"
+                pipeline = {"model": final_model, "scaler": scl if do_scaling else None,
+                            "target": target_var, "model_key": model_key,
+                            "best_params": best_params, "feature_names": list(X_raw.columns)}
+                joblib.dump(pipeline, model_file)
+
+                summary = {"model": model_key, "target": target_var,
+                           "R2_train": round(r2_train, 4), "R2_val": round(r2_val, 4),
+                           "R2_test": round(r2_test, 4), "RMSE_test": round(rmse_test, 4),
+                           "MAE_test": round(mae_test, 4),
+                           "train_samples": len(y_train), "val_samples": len(y_val),
+                           "test_samples": len(y_test), "features": X_train.shape[1]}
+                all_results.append(summary)
+                best_models[model_key] = {"model": final_model,
+                    "y_train": y_train, "y_train_pred": y_train_pred,
+                    "y_val": y_val, "y_val_pred": y_val_pred,
+                    "y_test": y_test, "y_test_pred": y_test_pred,
+                    "target": target_var}
+
+                st.success(f"✅ {MODEL_MAP[model_key]} | R²(训练)={r2_train:.4f}  R²(验证)={r2_val:.4f}  R²(测试)={r2_test:.4f}")
+
+        # ---- 全部完成 ----
+        pbar.empty()
+        stext.empty()
+        if all_results:
+            summary_df = pd.DataFrame(all_results)
+            summary_csv = Config.MODEL_DIR / "optuna_all_summary.csv"
+            summary_df.to_csv(summary_csv, index=False)
+
+            hist = st.session_state.get("training_history2", [])
+            for rec in all_results:
+                hist = [r for r in hist if not (r["model"] == rec["model"] and r["target"] == rec["target"])]
+                hist.append(rec)
+            st.session_state.training_history2 = hist
+
+            st.balloons()
+            st.success(f"✅ 全部 {len(all_results)} 个模型训练完成！")
+            st.download_button("📥 下载训练摘要 CSV",
+                               summary_df.to_csv(index=False).encode("utf-8"),
+                               "optuna_all_summary.csv", "text/csv")
+
+            # 散点图
+            last_mk = list(best_models.keys())[-1]
+            last_m = best_models[last_mk]
+            _show_training_comparison(
+                hist,
+                y_train=last_m["y_train"], y_train_pred=last_m["y_train_pred"],
+                y_val=last_m["y_val"], y_val_pred=last_m["y_val_pred"],
+                y_test=last_m["y_test"], y_test_pred=last_m["y_test_pred"],
+                target_var=last_m["target"],
+            )
+
+    # ---- 页面重开时显示历史 ----
+    hist = st.session_state.get("training_history2", [])
+    if hist:
+        _show_training_comparison(hist)
+
 def create_hts_page():
     """高通量筛选页面"""
     st.title("🔍 高通量筛选")

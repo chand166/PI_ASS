@@ -57,7 +57,8 @@ TRANSLATIONS = {
     "nav_extraction": {"zh": "🔬 数据提取", "en": "🔬 Data Extraction"},
     "nav_smiles": {"zh": "🧬 SMILES转化", "en": "🧬 SMILES Conversion"},
     "nav_descriptors": {"zh": "🧪 描述符计算", "en": "🧪 Descriptor Calculation"},
-    "nav_training": {"zh": "🤖 模型训练", "en": "🤖 Model Training"},
+    "nav_training": {"zh": "🧠 模型训练", "en": "🧠 Model Training"},
+    "nav_prediction": {"zh": "🎯 性能预测", "en": "🎯 Prediction"},
     "nav_hts": {"zh": "🔍 高通量筛选", "en": "🔍 HTS Screening"},
     "nav_settings": {"zh": "⚙️ 系统设置", "en": "⚙️ Settings"},
     "nav_help": {"zh": "📖 使用说明", "en": "📖 User Guide"},
@@ -410,7 +411,8 @@ def get_page_names(lang: str) -> list:
     """获取导航页面名称列表"""
     keys = [
         "nav_home", "nav_scoring", "nav_download", "nav_extraction",
-        "nav_smiles", "nav_descriptors", "nav_training", "nav_hts", "nav_settings", "nav_help"
+        "nav_smiles", "nav_descriptors", "nav_training", "nav_prediction",
+        "nav_hts", "nav_settings", "nav_help"
     ]
     return [t(k, lang) for k in keys]
 
@@ -419,7 +421,8 @@ def get_page_key(page_name: str, lang: str) -> str:
     """根据页面显示名称返回内部 key"""
     keys = [
         "nav_home", "nav_scoring", "nav_download", "nav_extraction",
-        "nav_smiles", "nav_descriptors", "nav_training", "nav_hts", "nav_settings", "nav_help"
+        "nav_smiles", "nav_descriptors", "nav_training", "nav_prediction",
+        "nav_hts", "nav_settings", "nav_help"
     ]
     for k in keys:
         if t(k, lang) == page_name:
